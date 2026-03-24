@@ -7,6 +7,8 @@ class QuizService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final _uuid = const Uuid();
 
+  static const Duration _networkTimeout = Duration(seconds: 12);
+
   // Create a new quiz
   Future<QuizModel> createQuiz({
     required String userId,
@@ -161,17 +163,42 @@ class QuizService {
 
   // Get user's quizzes from Firestore
   Future<List<QuizModel>> getUserQuizzes(String userId) async {
-    final snapshot = await _firestore
-        .collection('quizzes')
-        .where('userId', isEqualTo: userId)
-        .get();
+    try {
+      final snapshot = await _firestore
+          .collection('quizzes')
+          .where('userId', isEqualTo: userId)
+          .orderBy('createdAt', descending: true)
+          .limit(200)
+          .get()
+          .timeout(
+            _networkTimeout,
+            onTimeout: () => throw 'Request timed out. Please check your connection and try again.',
+          );
 
-    final quizzes = snapshot.docs
-        .map((doc) => QuizModel.fromFirestore(doc.data()))
-        .toList();
+      return snapshot.docs
+          .map((doc) => QuizModel.fromFirestore(doc.data()))
+          .toList();
+    } on FirebaseException catch (e) {
+      // If index is missing, fall back to a non-ordered query so the app still works.
+      if (e.code == 'failed-precondition') {
+        final snapshot = await _firestore
+            .collection('quizzes')
+            .where('userId', isEqualTo: userId)
+            .limit(200)
+            .get()
+            .timeout(
+              _networkTimeout,
+              onTimeout: () => throw 'Request timed out. Please check your connection and try again.',
+            );
 
-    quizzes.sort((a, b) => (b.createdAt).compareTo(a.createdAt));
-    return quizzes;
+        final quizzes = snapshot.docs
+            .map((doc) => QuizModel.fromFirestore(doc.data()))
+            .toList();
+        quizzes.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        return quizzes;
+      }
+      rethrow;
+    }
   }
 
   // Get quiz with questions from Firestore

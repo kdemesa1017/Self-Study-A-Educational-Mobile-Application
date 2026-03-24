@@ -33,6 +33,8 @@ class HomeScreen extends ConsumerWidget {
           ],
         ),
       ),
+      skipLoadingOnReload: true,
+      skipLoadingOnRefresh: true,
     );
   }
 

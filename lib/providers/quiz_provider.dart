@@ -23,7 +23,7 @@ class QuizNotifier extends StateNotifier<AsyncValue<List<QuizModel>>> {
   }
 
   Future<void> loadQuizzes() async {
-    state = const AsyncValue.loading();
+    state = const AsyncLoading<List<QuizModel>>().copyWithPrevious(state);
     state = await AsyncValue.guard(
       () => _quizService.getUserQuizzes(_userId),
     );
@@ -135,18 +135,13 @@ final filteredQuizzesProvider =
   final query = ref.watch(searchQueryProvider);
   final quizzesAsync = ref.watch(userQuizzesProvider(userId));
 
-  return quizzesAsync.when(
-    data: (quizzes) {
-      if (query.isEmpty) return AsyncValue.data(quizzes);
-      final lowerQuery = query.toLowerCase();
-      final filtered = quizzes.where((quiz) {
-        return quiz.title.toLowerCase().contains(lowerQuery) ||
-            (quiz.description?.toLowerCase().contains(lowerQuery) ?? false) ||
-            (quiz.category?.toLowerCase().contains(lowerQuery) ?? false);
-      }).toList();
-      return AsyncValue.data(filtered);
-    },
-    loading: () => const AsyncValue.loading(),
-    error: (e, st) => AsyncValue.error(e, st),
-  );
+  return quizzesAsync.whenData((quizzes) {
+    if (query.isEmpty) return quizzes;
+    final lowerQuery = query.toLowerCase();
+    return quizzes.where((quiz) {
+      return quiz.title.toLowerCase().contains(lowerQuery) ||
+          (quiz.description?.toLowerCase().contains(lowerQuery) ?? false) ||
+          (quiz.category?.toLowerCase().contains(lowerQuery) ?? false);
+    }).toList();
+  });
 });

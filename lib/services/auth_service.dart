@@ -112,9 +112,15 @@ class AuthService {
     try {
       String? profileImageUrl;
       if (profileImage != null) {
-        final ref = _storage.ref().child('profile_images/$userId.jpg');
-        await ref.putFile(profileImage);
-        profileImageUrl = await ref.getDownloadURL();
+        try {
+          final ref = _storage.ref().child('profile_images/$userId.jpg');
+          await ref.putFile(profileImage);
+          profileImageUrl = await ref.getDownloadURL();
+        } on FirebaseException catch (e) {
+          throw 'Failed to upload image: ${e.message ?? e.code}';
+        } catch (e) {
+          throw 'Failed to upload image. Please try again.';
+        }
       }
 
       final nowIso = DateTime.now().toIso8601String();

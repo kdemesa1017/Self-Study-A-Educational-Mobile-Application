@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:io';
 import '../services/auth_service.dart';
 import '../models/user_model.dart';
 
@@ -104,7 +105,7 @@ class AuthNotifier extends StateNotifier<UserModel?> {
     }
   }
 
-  Future<String?> updateProfileImage(dynamic imageFile) async {
+  Future<String?> updateProfileImage(File imageFile) async {
     if (state == null) return 'No user logged in';
 
     try {

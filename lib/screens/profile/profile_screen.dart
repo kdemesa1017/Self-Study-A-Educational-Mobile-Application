@@ -68,7 +68,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       if (_selectedImage != null) {
         final imageError = await ref
             .read(currentUserProvider.notifier)
-            .updateProfileImage(_selectedImage);
+            .updateProfileImage(_selectedImage!);
         if (!mounted) return;
         if (imageError != null) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -227,30 +227,46 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           ],
                         ),
                         shape: BoxShape.circle,
-                        image: _selectedImage != null
-                            ? DecorationImage(
-                                image: FileImage(_selectedImage!),
-                                fit: BoxFit.cover,
-                              )
-                            : (user.profileImageUrl != null
-                                ? DecorationImage(
-                                    image: NetworkImage(user.profileImageUrl!),
-                                    fit: BoxFit.cover,
-                                  )
-                                : null),
                       ),
-                      child: _selectedImage == null && user.profileImageUrl == null
-                          ? Center(
-                              child: Text(
-                                user.name.substring(0, 1).toUpperCase(),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 48,
-                                ),
-                              ),
+                      clipBehavior: Clip.antiAlias,
+                      child: _selectedImage != null
+                          ? Image.file(
+                              _selectedImage!,
+                              fit: BoxFit.cover,
+                              width: 120,
+                              height: 120,
                             )
-                          : null,
+                          : (user.profileImageUrl != null
+                              ? Image.network(
+                                  user.profileImageUrl!,
+                                  fit: BoxFit.cover,
+                                  width: 120,
+                                  height: 120,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    // Silently fall back to initials if
+                                    // the stored image URL is broken/missing.
+                                    return Center(
+                                      child: Text(
+                                        user.name.substring(0, 1).toUpperCase(),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 48,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                )
+                              : Center(
+                                  child: Text(
+                                    user.name.substring(0, 1).toUpperCase(),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 48,
+                                    ),
+                                  ),
+                                )),
                     ),
                     if (_isEditing)
                       Positioned(
