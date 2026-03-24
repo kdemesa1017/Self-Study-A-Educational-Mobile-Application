@@ -46,7 +46,7 @@ class _CreateQuizScreenState extends ConsumerState<CreateQuizScreen> {
     if (_questions.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Add at least one question'),
+          content: Text('Please add at least one question before creating the quiz.'),
           backgroundColor: Colors.red,
         ),
       );
@@ -62,9 +62,21 @@ class _CreateQuizScreenState extends ConsumerState<CreateQuizScreen> {
         );
         return;
       }
-      if (!q.isFlashcard && q.options.any((o) => o.text.isEmpty)) {
+      if (!q.isFlashcard && q.options.length != 4) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Question ${i + 1} must have exactly 4 choices.')),
+        );
+        return;
+      }
+      if (!q.isFlashcard && q.options.any((o) => o.text.trim().isEmpty)) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Please fill all options for question ${i + 1}')),
+        );
+        return;
+      }
+      if (!q.isFlashcard && (q.correctAnswerIndex < 0 || q.correctAnswerIndex > 3)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Please choose the correct answer for question ${i + 1}')),
         );
         return;
       }
@@ -109,7 +121,7 @@ class _CreateQuizScreenState extends ConsumerState<CreateQuizScreen> {
         questionText: q.questionController.text.trim(),
         options: q.isFlashcard 
             ? [q.backController.text.trim()] 
-            : q.options.map((o) => o.text).toList(),
+            : q.options.map((o) => o.text.trim()).toList(),
         correctAnswerIndex: q.isFlashcard ? 0 : q.correctAnswerIndex,
         isFlashcard: q.isFlashcard,
         flashcardBack: q.isFlashcard ? q.backController.text.trim() : null,
@@ -129,6 +141,7 @@ class _CreateQuizScreenState extends ConsumerState<CreateQuizScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       body: Stepper(
         currentStep: _currentStep,
         onStepContinue: () {
@@ -282,6 +295,9 @@ class _CreateQuizScreenState extends ConsumerState<CreateQuizScreen> {
                       onSelected: (selected) {
                         setState(() {
                           question.isFlashcard = selected;
+                          if (selected) {
+                            question.correctAnswerIndex = 0;
+                          }
                         });
                       },
                     ),
@@ -345,16 +361,6 @@ class _CreateQuizScreenState extends ConsumerState<CreateQuizScreen> {
                       ),
                     );
                   }),
-                  if (question.options.length < 4)
-                    TextButton.icon(
-                      onPressed: () {
-                        setState(() {
-                          question.options.add(TextEditingController());
-                        });
-                      },
-                      icon: const Icon(Icons.add),
-                      label: const Text('Add Option'),
-                    ),
                 ],
               ),
           ],
@@ -367,6 +373,7 @@ class _CreateQuizScreenState extends ConsumerState<CreateQuizScreen> {
 class QuestionFormData {
   final TextEditingController questionController = TextEditingController();
   final List<TextEditingController> options = [
+    TextEditingController(),
     TextEditingController(),
     TextEditingController(),
     TextEditingController(),

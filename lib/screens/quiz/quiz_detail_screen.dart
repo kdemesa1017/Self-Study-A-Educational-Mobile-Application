@@ -404,15 +404,24 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
     final user = ref.read(currentUserProvider);
     if (user == null) return;
 
-    final (quiz, questions) = ref
+    final (quiz, questions) = await ref
         .read(userQuizzesProvider(user.id).notifier)
         .getQuizWithQuestions(widget.quizId);
 
-    setState(() {
-      _quiz = quiz;
-      _questions = questions;
-      _isLoading = false;
-    });
+    if (mounted) {
+      setState(() {
+        _quiz = quiz;
+        _questions = questions;
+        _isLoading = false;
+      });
+      // If quiz was deleted, navigate away
+      if (quiz == null) {
+        context.go('/my-quizzes');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('This quiz no longer exists')),
+        );
+      }
+    }
   }
 
   Future<void> _deleteQuestion(String questionId) async {
@@ -473,7 +482,10 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
             .read(userQuizzesProvider(user.id).notifier)
             .deleteQuiz(widget.quizId);
         if (mounted) {
-          context.pop();
+          context.go('/my-quizzes');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Quiz deleted successfully')),
+          );
         }
       }
     }
@@ -483,27 +495,15 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(
+        resizeToAvoidBottomInset: false,
         body: Center(child: CircularProgressIndicator()),
       );
     }
 
     if (_quiz == null) {
-      return Scaffold(
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline, size: 64, color: Colors.red),
-              const SizedBox(height: 16),
-              const Text('Quiz not found'),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () => context.pop(),
-                child: const Text('Go Back'),
-              ),
-            ],
-          ),
-        ),
+      return const Scaffold(
+        resizeToAvoidBottomInset: false,
+        body: Center(child: CircularProgressIndicator()),
       );
     }
 
@@ -512,6 +512,7 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
     final canEdit = currentUser != null && _quiz!.userId == currentUser.id;
 
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       body: CustomScrollView(
         slivers: [
           // App Bar
@@ -523,24 +524,67 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
                 _quiz!.title,
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
-              background: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      theme.colorScheme.primary,
-                      theme.colorScheme.secondary,
-                    ],
+              background: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Decorative image (no assets needed)
+                  Image.network(
+                    'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=1200&q=60',
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              theme.colorScheme.primary,
+                              theme.colorScheme.secondary,
+                            ],
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                ),
-                child: SafeArea(
-                  child: Padding(
+                  // Scrim so text stays readable
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withOpacity(0.25),
+                          Colors.black.withOpacity(0.55),
+                        ],
+                      ),
+                    ),
+                  ),
+                  // Existing content
+                  Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        const SizedBox(height: 60),
+                        if (_quiz!.category != null)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              _quiz!.category!,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        const SizedBox(height: 8),
                         if (_quiz!.description != null)
                           Text(
                             _quiz!.description!,
@@ -548,11 +592,13 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
                               color: Colors.white.withOpacity(0.9),
                               fontSize: 14,
                             ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
                       ],
                     ),
                   ),
-                ),
+                ],
               ),
             ),
             actions: [

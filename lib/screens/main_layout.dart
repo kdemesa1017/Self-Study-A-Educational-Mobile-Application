@@ -63,6 +63,25 @@ class _MainLayoutState extends ConsumerState<MainLayout> {
     }
 
     return Scaffold(
+      // Flutter Web: avoids ViewInsets assertion when virtual keyboard dismisses
+      resizeToAvoidBottomInset: false,
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Theme.of(context).colorScheme.surface,
+              Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+            ],
+          ),
+        ),
+        child: Column(
+          children: [
+            Expanded(child: widget.child),
+          ],
+        ),
+      ),
       appBar: AppBar(
         elevation: 0,
         backgroundColor: Colors.transparent,
@@ -115,13 +134,12 @@ class _MainLayoutState extends ConsumerState<MainLayout> {
           const SizedBox(width: 8),
         ],
       ),
-      body: widget.child,
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withValues(alpha: 0.05),
               blurRadius: 10,
               offset: const Offset(0, -5),
             ),

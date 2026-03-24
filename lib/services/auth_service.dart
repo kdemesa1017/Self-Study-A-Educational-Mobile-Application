@@ -2,39 +2,58 @@ import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
 import '../models/user_model.dart';
-import 'local_storage_service.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
 
-  // Current user stream
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
-  // Get current Firebase user
   User? get currentFirebaseUser => _auth.currentUser;
 
-  // Get current user from local storage
-  UserModel? get currentLocalUser => LocalStorageService.getCurrentUser();
+  Future<UserModel?> getUserFromFirestore(
+    String uid, {
+    bool forceServer = false,
+  }) async {
+    try {
+      DocumentSnapshot<Map<String, dynamic>> doc;
 
-  // Sign up with email and password
+      if (forceServer) {
+        try {
+          doc = await _firestore
+              .collection('users')
+              .doc(uid)
+              .get(const GetOptions(source: Source.server));
+        } on FirebaseException {
+          doc = await _firestore.collection('users').doc(uid).get();
+        }
+      } else {
+        doc = await _firestore.collection('users').doc(uid).get();
+      }
+
+      if (doc.exists && doc.data() != null) {
+        return UserModel.fromFirestore(doc.data()!);
+      }
+    } catch (e) {
+      rethrow;
+    }
+    return null;
+  }
+
   Future<UserModel?> signUp({
     required String email,
     required String password,
     required String name,
   }) async {
     try {
-      // Create user in Firebase Auth
       final UserCredential result = await _auth.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
 
       if (result.user != null) {
-        // Create user model
         final user = UserModel(
           id: result.user!.uid,
           email: email,
@@ -42,28 +61,15 @@ class AuthService {
           createdAt: DateTime.now(),
         );
 
-        // Save to local storage
-        await LocalStorageService.saveUser(user);
-        await LocalStorageService.setCurrentUser(user.id);
-
-        // Try to sync to Firestore if online
-        try {
-          await _firestore.collection('users').doc(user.id).set(user.toFirestore());
-          final syncedUser = user.copyWith(lastSyncedAt: DateTime.now());
-          await LocalStorageService.saveUser(syncedUser);
-        } catch (e) {
-          // Will sync later when online
-        }
-
+        await _firestore.collection('users').doc(user.id).set(user.toFirestore());
         return user;
       }
     } on FirebaseAuthException catch (e) {
-      throw _handleAuthError(e);
+      throw '${_handleAuthError(e)} (code: ${e.code})';
     }
     return null;
   }
 
-  // Sign in with email and password
   Future<UserModel?> signIn({
     required String email,
     required String password,
@@ -75,33 +81,15 @@ class AuthService {
       );
 
       if (result.user != null) {
-        // Try to get user from Firestore first
-        UserModel? user;
-        try {
-          final doc = await _firestore.collection('users').doc(result.user!.uid).get();
-          if (doc.exists && doc.data() != null) {
-            user = UserModel.fromFirestore(doc.data()!);
-          }
-        } catch (e) {
-          // Use local data if Firestore fails
-        }
+        final user = await getUserFromFirestore(result.user!.uid, forceServer: true);
+        if (user != null) return user;
 
-        // If not found online, check local storage
-        user ??= LocalStorageService.getUser(result.user!.uid);
-
-        // If still not found, create basic user model
-        user ??= UserModel(
+        return UserModel(
           id: result.user!.uid,
           email: email,
-          name: email.split('@')[0],
+          name: result.user!.displayName ?? email.split('@')[0],
           createdAt: DateTime.now(),
         );
-
-        // Save to local storage
-        await LocalStorageService.saveUser(user);
-        await LocalStorageService.setCurrentUser(user.id);
-
-        return user;
       }
     } on FirebaseAuthException catch (e) {
       throw _handleAuthError(e);
@@ -109,13 +97,10 @@ class AuthService {
     return null;
   }
 
-  // Sign out
   Future<void> signOut() async {
     await _auth.signOut();
-    await LocalStorageService.clearCurrentUser();
   }
 
-  // Update user profile
   Future<UserModel?> updateProfile({
     required String userId,
     String? name,
@@ -125,104 +110,131 @@ class AuthService {
     File? profileImage,
   }) async {
     try {
-      UserModel? user = LocalStorageService.getUser(userId);
-      if (user == null) return null;
-
-      String? profileImageUrl = user.profileImageUrl;
-
-      // Upload new profile image if provided
+      String? profileImageUrl;
       if (profileImage != null) {
-        try {
-          final ref = _storage.ref().child('profile_images/$userId.jpg');
-          await ref.putFile(profileImage);
-          profileImageUrl = await ref.getDownloadURL();
-        } catch (e) {
-          // Continue with existing URL if upload fails
-        }
+        final ref = _storage.ref().child('profile_images/$userId.jpg');
+        await ref.putFile(profileImage);
+        profileImageUrl = await ref.getDownloadURL();
       }
 
-      // Update user model
-      user = user.copyWith(
-        name: name,
-        age: age,
-        address: address,
-        bio: bio,
-        profileImageUrl: profileImageUrl,
-      );
+      final nowIso = DateTime.now().toIso8601String();
+      final updates = <String, dynamic>{
+        if (name != null) 'name': name,
+        if (age != null) 'age': age,
+        if (address != null) 'address': address,
+        if (bio != null) 'bio': bio,
+        if (profileImageUrl != null) 'profileImageUrl': profileImageUrl,
+        'lastSyncedAt': nowIso,
+      };
 
-      // Save to local storage
-      await LocalStorageService.saveUser(user);
+      await _firestore.collection('users').doc(userId).set(
+            updates,
+            SetOptions(merge: true),
+          );
 
-      // Try to sync to Firestore
-      try {
-        await _firestore.collection('users').doc(userId).update({
-          if (name != null) 'name': name,
-          if (age != null) 'age': age,
-          if (address != null) 'address': address,
-          if (bio != null) 'bio': bio,
-          if (profileImageUrl != null) 'profileImageUrl': profileImageUrl,
-          'lastSyncedAt': DateTime.now().toIso8601String(),
-        });
-        
-        final syncedUser = user.copyWith(lastSyncedAt: DateTime.now());
-        await LocalStorageService.saveUser(syncedUser);
-      } catch (e) {
-        // Will sync later when online
+      // Read back the full user document. If it doesn't exist or is missing
+      // required fields (from older accounts), create a minimal base doc.
+      var userDoc = await _firestore.collection('users').doc(userId).get();
+      if (!userDoc.exists || userDoc.data() == null) {
+        final fbUser = _auth.currentUser;
+        final base = <String, dynamic>{
+          'id': userId,
+          'email': fbUser?.email ?? '',
+          'name': name ?? fbUser?.displayName ?? (fbUser?.email?.split('@').first ?? 'User'),
+          'createdAt': DateTime.now().toIso8601String(),
+          ...updates,
+        };
+        await _firestore.collection('users').doc(userId).set(
+              base,
+              SetOptions(merge: true),
+            );
+        userDoc = await _firestore.collection('users').doc(userId).get();
       }
 
-      return user;
+      if (!userDoc.exists || userDoc.data() == null) return null;
+      final data = userDoc.data()!;
+      if (data['id'] == null || data['email'] == null || data['name'] == null || data['createdAt'] == null) {
+        final fbUser = _auth.currentUser;
+        await _firestore.collection('users').doc(userId).set(
+              {
+                'id': userId,
+                'email': fbUser?.email ?? data['email'] ?? '',
+                'name': data['name'] ?? name ?? fbUser?.displayName ?? 'User',
+                'createdAt': data['createdAt'] ?? DateTime.now().toIso8601String(),
+              },
+              SetOptions(merge: true),
+            );
+        userDoc = await _firestore.collection('users').doc(userId).get();
+      }
+
+      if (!userDoc.exists || userDoc.data() == null) return null;
+      return UserModel.fromFirestore(userDoc.data()!);
     } catch (e) {
       rethrow;
     }
   }
 
-  // Sync user data with Firestore
-  Future<void> syncUserData(String userId) async {
+  Future<void> deleteAllUserData(String userId) async {
     try {
-      final localUser = LocalStorageService.getUser(userId);
-      final doc = await _firestore.collection('users').doc(userId).get();
+      final quizzesSnapshot = await _firestore
+          .collection('quizzes')
+          .where('userId', isEqualTo: userId)
+          .get();
 
-      if (doc.exists && doc.data() != null) {
-        final firestoreUser = UserModel.fromFirestore(doc.data()!);
-        
-        // Use Firestore data if it's newer
-        if (localUser == null || 
-            (firestoreUser.lastSyncedAt != null && 
-             (localUser.lastSyncedAt == null || 
-              firestoreUser.lastSyncedAt!.isAfter(localUser.lastSyncedAt!)))) {
-          await LocalStorageService.saveUser(firestoreUser);
-        } else if (localUser.lastSyncedAt != null && 
-                   (firestoreUser.lastSyncedAt == null || 
-                    localUser.lastSyncedAt!.isAfter(firestoreUser.lastSyncedAt!))) {
-          // Local is newer, upload to Firestore
-          await _firestore.collection('users').doc(userId).set(localUser.toFirestore());
-          final syncedUser = localUser.copyWith(lastSyncedAt: DateTime.now());
-          await LocalStorageService.saveUser(syncedUser);
+      final List<DocumentReference<Map<String, dynamic>>> refsToDelete = [];
+
+      for (final quizDoc in quizzesSnapshot.docs) {
+        final questionsSnapshot = await _firestore
+            .collection('questions')
+            .where('quizId', isEqualTo: quizDoc.id)
+            .get();
+
+        for (final qDoc in questionsSnapshot.docs) {
+          refsToDelete.add(qDoc.reference);
         }
-      } else if (localUser != null) {
-        // Upload local user to Firestore
-        await _firestore.collection('users').doc(userId).set(localUser.toFirestore());
-        final syncedUser = localUser.copyWith(lastSyncedAt: DateTime.now());
-        await LocalStorageService.saveUser(syncedUser);
+
+        refsToDelete.add(quizDoc.reference);
       }
+
+      refsToDelete.add(_firestore.collection('users').doc(userId));
+
+      // Firestore write batch limit is 500. Keep a safe margin.
+      const chunkSize = 450;
+      for (var i = 0; i < refsToDelete.length; i += chunkSize) {
+        final batch = _firestore.batch();
+        final end = (i + chunkSize) > refsToDelete.length ? refsToDelete.length : (i + chunkSize);
+        for (final ref in refsToDelete.sublist(i, end)) {
+          batch.delete(ref);
+        }
+        await batch.commit();
+      }
+    } on FirebaseException catch (e) {
+      // Surface the error so UI can display it.
+      throw e.message ?? 'Failed to delete user data.';
     } catch (e) {
-      // Sync failed, will try again later
+      throw 'Failed to delete user data.';
     }
   }
 
-  // Handle authentication errors
   String _handleAuthError(FirebaseAuthException e) {
     switch (e.code) {
       case 'user-not-found':
         return 'No user found with this email.';
       case 'wrong-password':
         return 'Incorrect password.';
+      case 'invalid-login-credentials':
+      case 'invalid-credential':
+        return 'Invalid email or password.';
       case 'email-already-in-use':
         return 'An account already exists with this email.';
       case 'invalid-email':
         return 'Invalid email address.';
       case 'weak-password':
         return 'Password is too weak.';
+      case 'operation-not-allowed':
+        return 'Email/password sign-in is not enabled for this project.';
+      case 'too-many-requests':
+        return 'Too many attempts. Please try again later.';
       default:
         return 'Authentication failed. Please try again.';
     }

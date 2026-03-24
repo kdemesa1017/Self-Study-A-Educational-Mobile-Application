@@ -11,10 +11,32 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(currentUserProvider);
-    final quizzes = user != null 
+    final quizzesAsync = user != null 
         ? ref.watch(userQuizzesProvider(user.id)) 
-        : <QuizModel>[];
+        : const AsyncValue.data(<QuizModel>[]);
     
+    return quizzesAsync.when(
+      data: (quizzes) => _buildContent(context, ref, user, quizzes),
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text('Error loading data: $e'),
+            if (user != null) ...[
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => ref.read(userQuizzesProvider(user.id).notifier).refreshQuizzes(),
+                child: const Text('Retry'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContent(BuildContext context, WidgetRef ref, user, List<QuizModel> quizzes) {
     final recentQuizzes = quizzes.take(3).toList();
     final totalQuizzes = quizzes.length;
     final totalQuestions = quizzes.fold<int>(

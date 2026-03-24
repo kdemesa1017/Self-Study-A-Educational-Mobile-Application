@@ -1,42 +1,14 @@
-import 'package:hive/hive.dart';
-import 'question_model.dart';
-
-part 'quiz_model.g.dart';
-
-@HiveType(typeId: 2)
-class QuizModel extends HiveObject {
-  @HiveField(0)
-  String id;
-
-  @HiveField(1)
-  String userId;
-
-  @HiveField(2)
-  String title;
-
-  @HiveField(3)
-  String? description;
-
-  @HiveField(4)
-  List<String> questionIds;
-
-  @HiveField(5)
-  DateTime createdAt;
-
-  @HiveField(6)
-  DateTime? lastModifiedAt;
-
-  @HiveField(7)
-  bool isSynced;
-
-  @HiveField(8)
-  String? category;
-
-  @HiveField(9)
-  int? studyCount;
-
-  @HiveField(10)
-  double? averageScore;
+class QuizModel {
+  final String id;
+  final String userId;
+  final String title;
+  final String? description;
+  final List<String> questionIds;
+  final DateTime createdAt;
+  final DateTime? lastModifiedAt;
+  final String? category;
+  final int? studyCount;
+  final double? averageScore;
 
   QuizModel({
     required this.id,
@@ -46,7 +18,6 @@ class QuizModel extends HiveObject {
     required this.questionIds,
     required this.createdAt,
     this.lastModifiedAt,
-    this.isSynced = false,
     this.category,
     this.studyCount = 0,
     this.averageScore = 0.0,
@@ -78,7 +49,6 @@ class QuizModel extends HiveObject {
       lastModifiedAt: data['lastModifiedAt'] != null
           ? DateTime.parse(data['lastModifiedAt'] as String)
           : null,
-      isSynced: true,
       category: data['category'] as String?,
       studyCount: data['studyCount'] as int? ?? 0,
       averageScore: (data['averageScore'] as num?)?.toDouble() ?? 0.0,
@@ -93,7 +63,6 @@ class QuizModel extends HiveObject {
     List<String>? questionIds,
     DateTime? createdAt,
     DateTime? lastModifiedAt,
-    bool? isSynced,
     String? category,
     int? studyCount,
     double? averageScore,
@@ -106,7 +75,6 @@ class QuizModel extends HiveObject {
       questionIds: questionIds ?? this.questionIds,
       createdAt: createdAt ?? this.createdAt,
       lastModifiedAt: lastModifiedAt ?? this.lastModifiedAt,
-      isSynced: isSynced ?? this.isSynced,
       category: category ?? this.category,
       studyCount: studyCount ?? this.studyCount,
       averageScore: averageScore ?? this.averageScore,

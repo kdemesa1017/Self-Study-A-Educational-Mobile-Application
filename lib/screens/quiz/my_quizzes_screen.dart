@@ -18,7 +18,7 @@ class MyQuizzesScreen extends ConsumerWidget {
       return const Center(child: CircularProgressIndicator());
     }
 
-    final quizzes = ref.watch(filteredQuizzesProvider(user.id));
+    final quizzesAsync = ref.watch(filteredQuizzesProvider(user.id));
 
     return Column(
       children: [
@@ -46,21 +46,37 @@ class MyQuizzesScreen extends ConsumerWidget {
 
         // Quiz List
         Expanded(
-          child: quizzes.isEmpty
-              ? _buildEmptyState(context)
-              : RefreshIndicator(
-                  onRefresh: () async {
-                    await ref.read(userQuizzesProvider(user.id).notifier).syncAllData();
-                  },
-                  child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: quizzes.length,
-                    itemBuilder: (context, index) {
-                      final quiz = quizzes[index];
-                      return _buildQuizCard(context, ref, quiz, user.id);
+          child: quizzesAsync.when(
+            data: (quizzes) => quizzes.isEmpty
+                ? _buildEmptyState(context)
+                : RefreshIndicator(
+                    onRefresh: () async {
+                      await ref.read(userQuizzesProvider(user.id).notifier).refreshQuizzes();
                     },
+                    child: ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: quizzes.length,
+                      itemBuilder: (context, index) {
+                        final quiz = quizzes[index];
+                        return _buildQuizCard(context, ref, quiz, user.id);
+                      },
+                    ),
                   ),
-                ),
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('Error loading quizzes: $e'),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => ref.read(userQuizzesProvider(user.id).notifier).refreshQuizzes(),
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ],
     );
@@ -163,12 +179,6 @@ class MyQuizzesScreen extends ConsumerWidget {
                         ],
                       ),
                     ),
-                    if (!quiz.isSynced)
-                      Icon(
-                        Icons.cloud_off,
-                        size: 16,
-                        color: Colors.grey.shade400,
-                      ),
                   ],
                 ),
                 const SizedBox(height: 12),

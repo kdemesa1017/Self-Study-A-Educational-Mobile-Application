@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../providers/auth_provider.dart';
+import '../../widgets/auth_background.dart';
+import '../../widgets/glass_card.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -163,17 +165,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Theme.of(context).colorScheme.primary.withOpacity(0.1),
-              Theme.of(context).colorScheme.secondary.withOpacity(0.05),
-            ],
-          ),
-        ),
+      resizeToAvoidBottomInset: false,
+      body: AuthBackground(
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
@@ -196,6 +189,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           ],
                         ),
                         borderRadius: BorderRadius.circular(24),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+                            blurRadius: 20,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
                       ),
                       child: const Icon(
                         Icons.school_outlined,
@@ -219,9 +219,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       ),
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 48),
+                    const SizedBox(height: 32),
 
-                    // Email Field
+                    GlassCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Email Field
                     TextFormField(
                       controller: _emailController,
                       keyboardType: TextInputType.emailAddress,
@@ -311,6 +315,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           child: const Text('Sign Up'),
                         ),
                       ],
+                    ),
+                        ],
+                      ),
                     ),
                   ],
                 ),

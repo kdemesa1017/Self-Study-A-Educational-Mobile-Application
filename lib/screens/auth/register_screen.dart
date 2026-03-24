@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../providers/auth_provider.dart';
+import '../../widgets/auth_background.dart';
+import '../../widgets/glass_card.dart';
 
 class RegisterScreen extends ConsumerStatefulWidget {
   const RegisterScreen({super.key});
@@ -64,17 +66,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Theme.of(context).colorScheme.primary.withOpacity(0.1),
-              Theme.of(context).colorScheme.secondary.withOpacity(0.05),
-            ],
-          ),
-        ),
+      resizeToAvoidBottomInset: false,
+      body: AuthBackground(
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
@@ -101,9 +94,13 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                       ),
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 24),
 
-                    // Name Field
+                    GlassCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Name Field
                     TextFormField(
                       controller: _nameController,
                       decoration: const InputDecoration(
@@ -236,6 +233,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                           child: const Text('Sign In'),
                         ),
                       ],
+                    ),
+                        ],
+                      ),
                     ),
                   ],
                 ),

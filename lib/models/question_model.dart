@@ -1,32 +1,12 @@
-import 'package:hive/hive.dart';
-
-part 'question_model.g.dart';
-
-@HiveType(typeId: 1)
-class QuestionModel extends HiveObject {
-  @HiveField(0)
-  String id;
-
-  @HiveField(1)
-  String quizId;
-
-  @HiveField(2)
-  String questionText;
-
-  @HiveField(3)
-  List<String> options;
-
-  @HiveField(4)
-  int correctAnswerIndex;
-
-  @HiveField(5)
-  bool isFlashcard;
-
-  @HiveField(6)
-  String? flashcardBack;
-
-  @HiveField(7)
-  DateTime createdAt;
+class QuestionModel {
+  final String id;
+  final String quizId;
+  final String questionText;
+  final List<String> options;
+  final int correctAnswerIndex;
+  final bool isFlashcard;
+  final String? flashcardBack;
+  final DateTime createdAt;
 
   QuestionModel({
     required this.id,

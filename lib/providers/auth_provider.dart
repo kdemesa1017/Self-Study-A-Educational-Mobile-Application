@@ -4,17 +4,8 @@ import '../models/user_model.dart';
 
 final authServiceProvider = Provider<AuthService>((ref) => AuthService());
 
-final authStateProvider = StreamProvider<UserModel?>((ref) {
-  final authService = ref.watch(authServiceProvider);
-  return authService.authStateChanges.map((firebaseUser) {
-    if (firebaseUser != null) {
-      return authService.currentLocalUser;
-    }
-    return null;
-  });
-});
-
-final currentUserProvider = StateNotifierProvider<AuthNotifier, UserModel?>((ref) {
+final currentUserProvider =
+    StateNotifierProvider<AuthNotifier, UserModel?>((ref) {
   final authService = ref.watch(authServiceProvider);
   return AuthNotifier(authService);
 });
@@ -22,7 +13,25 @@ final currentUserProvider = StateNotifierProvider<AuthNotifier, UserModel?>((ref
 class AuthNotifier extends StateNotifier<UserModel?> {
   final AuthService _authService;
 
-  AuthNotifier(this._authService) : super(_authService.currentLocalUser);
+  AuthNotifier(this._authService) : super(null) {
+    _init();
+  }
+
+  Future<void> _init() async {
+    final fbUser = _authService.currentFirebaseUser;
+    if (fbUser != null) {
+      final user = await _authService.getUserFromFirestore(fbUser.uid);
+      if (user != null) state = user;
+    }
+    _authService.authStateChanges.listen((fbUser) async {
+      if (fbUser == null) {
+        state = null;
+      } else if (state == null || state!.id != fbUser.uid) {
+        final user = await _authService.getUserFromFirestore(fbUser.uid);
+        if (user != null) state = user;
+      }
+    });
+  }
 
   Future<String?> signUp({
     required String email,
@@ -69,13 +78,6 @@ class AuthNotifier extends StateNotifier<UserModel?> {
     state = null;
   }
 
-  Future<void> syncUserData() async {
-    if (state != null) {
-      await _authService.syncUserData(state!.id);
-      state = _authService.currentLocalUser;
-    }
-  }
-
   Future<String?> updateProfile({
     String? name,
     int? age,
@@ -92,6 +94,9 @@ class AuthNotifier extends StateNotifier<UserModel?> {
         address: address,
         bio: bio,
       );
+      if (user == null) {
+        return 'Failed to update profile. Please try again.';
+      }
       state = user;
       return null;
     } catch (e) {
@@ -107,7 +112,21 @@ class AuthNotifier extends StateNotifier<UserModel?> {
         userId: state!.id,
         profileImage: imageFile,
       );
+      if (user == null) {
+        return 'Failed to update profile image. Please try again.';
+      }
       state = user;
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  Future<String?> clearAllData() async {
+    if (state == null) return 'No user logged in';
+
+    try {
+      await _authService.deleteAllUserData(state!.id);
       return null;
     } catch (e) {
       return e.toString();

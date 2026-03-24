@@ -16,9 +16,35 @@ class StudyModeScreen extends ConsumerWidget {
       return const Center(child: CircularProgressIndicator());
     }
 
-    final quizzes = ref.watch(userQuizzesProvider(user.id));
-    final quizzesWithQuestions = quizzes.where((q) => q.questionIds.isNotEmpty).toList();
+    final quizzesAsync = ref.watch(userQuizzesProvider(user.id));
 
+    return quizzesAsync.when(
+      data: (quizzes) {
+        final quizzesWithQuestions = quizzes.where((q) => q.questionIds.isNotEmpty).toList();
+        return _buildContent(context, quizzes, quizzesWithQuestions);
+      },
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text('Error loading quizzes: $e'),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () => ref.read(userQuizzesProvider(user.id).notifier).refreshQuizzes(),
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContent(
+    BuildContext context,
+    List<QuizModel> quizzes,
+    List<QuizModel> quizzesWithQuestions,
+  ) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(

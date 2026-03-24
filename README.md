@@ -1,13 +1,12 @@
 # Self Study - Quiz Generator & Study Platform
 
-A modern, offline-first quiz generator and study platform similar to Quizlet. Built with Flutter, Firebase, and Hive for local storage.
+A modern quiz generator and study platform similar to Quizlet. Built with Flutter and Firebase.
 
 ## System Overview
 
 **Self Study** allows users to:
 - Create custom quizzes with multiple-choice or flashcard questions
-- Study offline with local data persistence (IndexedDB via Hive)
-- Sync data with Firebase when online
+- Store and sync data with Firebase Firestore
 - Track study progress and scores
 - Use flashcard or quiz mode for studying
 
@@ -30,21 +29,19 @@ A modern, offline-first quiz generator and study platform similar to Quizlet. Bu
 ├─────────────────────────────────────────────────────────────┤
 │  Services                                                  │
 │  ├── Auth Service (Firebase Auth)                          │
-│  ├── Quiz Service (Firestore + Local Sync)                │
-│  └── Local Storage (Hive/IndexedDB)                       │
+│  └── Quiz Service (Firestore)                              │
 └─────────────────────────────────────────────────────────────┘
                               │
-            ┌─────────────────┴─────────────────┐
-            │                                   │
-     ┌──────▼──────┐                    ┌──────▼──────┐
-     │   Firebase  │                    │   Local DB  │
-     │  (Cloud)    │◄───── Sync ───────►│  (Offline)  │
-     │             │                    │             │
-     ├─────────────┤                    ├─────────────┤
-     │ - Auth      │                    │ - Hive      │
-     │ - Firestore │                    │ - IndexedDB │
-     │ - Storage   │                    │ (Web)       │
-     └─────────────┘                    └─────────────┘
+                              ▼
+                     ┌─────────────────┐
+                     │    Firebase     │
+                     │    (Cloud)      │
+                     │                 │
+                     ├─────────────────┤
+                     │ - Auth          │
+                     │ - Firestore     │
+                     │ - Storage       │
+                     └─────────────────┘
 ```
 
 ## Quick Start (Testing)
@@ -60,9 +57,6 @@ A modern, offline-first quiz generator and study platform similar to Quizlet. Bu
 ```bash
 # Get dependencies
 flutter pub get
-
-# Generate Hive adapters
-flutter pub run build_runner build
 ```
 
 ### 2. Run on Web
@@ -102,17 +96,14 @@ flutter build web --release
    - Go to Profile → Click Logout
    - Verify: Redirected to login screen
 
-### Phase 2: Quiz Management (Offline Mode)
+### Phase 2: Quiz Management
 
-**Test offline capability:**
-1. Disconnect internet (DevTools → Network → Offline)
-2. Create Quiz:
-   - Click "Create" tab
-   - Enter: Title, Description, Category
-   - Add 3+ questions (multiple choice or flashcard)
-   - Submit → Should save locally
-3. Verify in "My Quizzes" tab
-4. Reconnect internet → Should auto-sync
+**Test quiz creation:**
+1. Click "Create" tab
+2. Enter: Title, Description, Category
+3. Add 3+ questions (multiple choice or flashcard)
+4. Submit → Should save to Firebase
+5. Verify in "My Quizzes" tab
 
 **Test quiz editing:**
 1. Open existing quiz
@@ -149,17 +140,16 @@ flutter build web --release
    - Save → Verify updates in UI
 
 2. **Data Persistence Test**
-   - Create quiz offline
+   - Create quiz
    - Close browser
-   - Reopen app → Data should persist
-   - Login with same account → Quizzes available
+   - Reopen app → Login with same account
+   - Quizzes available from Firebase
 
 ## Key Features to Verify
 
 | Feature | Test Scenario | Expected Result |
 |---------|---------------|-----------------|
-| Offline Create | Disconnect → Create Quiz | Saves locally, shows "unsynced" icon |
-| Auto Sync | Reconnect after offline changes | Data uploads to Firebase |
+| Create Quiz | Create Quiz with questions | Saves to Firebase |
 | Image Upload | Profile picture upload | Shows in top-right avatar |
 | Search | Type in "My Quizzes" search | Filters quiz list |
 | Progress Tracking | Complete study session | Stats update (count, score) |
@@ -173,12 +163,6 @@ Error: FirebaseOptions cannot be null
 ```
 **Fix:** Verify `main.dart` has Firebase config for web
 
-### Hive/Local Storage Errors
-```
-Error: HiveError: Box not found
-```
-**Fix:** Run `flutter clean && flutter pub get`
-
 ### UI State Errors
 ```
 Error: setState() called after dispose()
@@ -191,22 +175,16 @@ Launch Chrome with disabled security (dev only):
 chrome.exe --disable-web-security --user-data-dir="C:/temp"
 ```
 
-## Developer Tools
-
-### Inspect Local Storage
-Chrome DevTools → Application → IndexedDB → hive
-
-### Network Testing
+## Network Testing
 Chrome DevTools → Network:
-- **Offline mode**: Test local functionality
 - **Throttle**: Test slow connection behavior
 
 ## Project Structure
 
 ```
 lib/
-├── models/              # Data classes with Hive adapters
-├── services/            # Auth, Quiz, Local Storage
+├── models/              # Data classes
+├── services/            # Auth, Quiz
 ├── providers/           # Riverpod state management
 ├── screens/             # UI components
 │   ├── auth/
@@ -222,14 +200,12 @@ lib/
 
 - [ ] User can register with email/password
 - [ ] User can login with existing account
-- [ ] User can create quiz with questions (online)
-- [ ] User can create quiz with questions (offline)
-- [ ] Data syncs when going from offline → online
+- [ ] User can create quiz with questions
 - [ ] User can edit profile
 - [ ] Flashcard study mode works
 - [ ] Quiz study mode works with scoring
 - [ ] Quiz search filters correctly
-- [ ] Delete quiz removes from local + cloud
+- [ ] Delete quiz removes from Firebase
 - [ ] Logout clears session
 - [ ] Data persists after browser close/reopen
 - [ ] Works on mobile browser (responsive)

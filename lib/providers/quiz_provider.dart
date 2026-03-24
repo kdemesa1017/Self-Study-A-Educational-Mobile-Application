@@ -5,23 +5,28 @@ import '../models/question_model.dart';
 
 final quizServiceProvider = Provider<QuizService>((ref) => QuizService());
 
-final userQuizzesProvider = StateNotifierProvider.family<QuizNotifier, List<QuizModel>, String>(
+final userQuizzesProvider =
+    StateNotifierProvider.family<QuizNotifier, AsyncValue<List<QuizModel>>, String>(
   (ref, userId) => QuizNotifier(ref.watch(quizServiceProvider), userId),
 );
 
 final currentQuizProvider = StateProvider<QuizModel?>((ref) => null);
 final currentQuestionsProvider = StateProvider<List<QuestionModel>>((ref) => []);
 
-class QuizNotifier extends StateNotifier<List<QuizModel>> {
+class QuizNotifier extends StateNotifier<AsyncValue<List<QuizModel>>> {
   final QuizService _quizService;
   final String _userId;
 
-  QuizNotifier(this._quizService, this._userId) : super([]) {
+  QuizNotifier(this._quizService, this._userId)
+      : super(const AsyncValue.loading()) {
     loadQuizzes();
   }
 
-  void loadQuizzes() {
-    state = _quizService.getUserQuizzes(_userId);
+  Future<void> loadQuizzes() async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(
+      () => _quizService.getUserQuizzes(_userId),
+    );
   }
 
   Future<QuizModel?> createQuiz({
@@ -35,7 +40,7 @@ class QuizNotifier extends StateNotifier<List<QuizModel>> {
       description: description,
       category: category,
     );
-    loadQuizzes();
+    await loadQuizzes();
     return quiz;
   }
 
@@ -55,7 +60,7 @@ class QuizNotifier extends StateNotifier<List<QuizModel>> {
       isFlashcard: isFlashcard,
       flashcardBack: flashcardBack,
     );
-    loadQuizzes();
+    await loadQuizzes();
     return question;
   }
 
@@ -71,7 +76,7 @@ class QuizNotifier extends StateNotifier<List<QuizModel>> {
       description: description,
       category: category,
     );
-    loadQuizzes();
+    await loadQuizzes();
     return quiz;
   }
 
@@ -91,50 +96,57 @@ class QuizNotifier extends StateNotifier<List<QuizModel>> {
       isFlashcard: isFlashcard,
       flashcardBack: flashcardBack,
     );
+    await loadQuizzes();
     return question;
   }
 
   Future<void> deleteQuestion(String questionId) async {
     await _quizService.deleteQuestion(questionId);
-    loadQuizzes();
+    await loadQuizzes();
   }
 
   Future<void> deleteQuiz(String quizId) async {
     await _quizService.deleteQuiz(quizId);
-    loadQuizzes();
+    await loadQuizzes();
   }
 
-  (QuizModel?, List<QuestionModel>) getQuizWithQuestions(String quizId) {
+  Future<(QuizModel?, List<QuestionModel>)> getQuizWithQuestions(String quizId) {
     return _quizService.getQuizWithQuestions(quizId);
   }
 
-  Future<void> syncAllData() async {
-    await _quizService.syncAllData(_userId);
-    loadQuizzes();
+  Future<void> refreshQuizzes() async {
+    await loadQuizzes();
   }
 
   Future<void> updateQuizStats(String quizId, int score, int totalQuestions) async {
     await _quizService.updateQuizStats(quizId, score, totalQuestions);
-    loadQuizzes();
+    await loadQuizzes();
   }
 
-  List<QuizModel> searchQuizzes(String query) {
+  Future<List<QuizModel>> searchQuizzes(String query) {
     return _quizService.searchQuizzes(query, _userId);
   }
 }
 
 final searchQueryProvider = StateProvider<String>((ref) => '');
 
-final filteredQuizzesProvider = Provider.family<List<QuizModel>, String>((ref, userId) {
+final filteredQuizzesProvider =
+    Provider.family<AsyncValue<List<QuizModel>>, String>((ref, userId) {
   final query = ref.watch(searchQueryProvider);
-  final allQuizzes = ref.watch(userQuizzesProvider(userId));
-  
-  if (query.isEmpty) return allQuizzes;
-  
-  final lowerQuery = query.toLowerCase();
-  return allQuizzes.where((quiz) {
-    return quiz.title.toLowerCase().contains(lowerQuery) ||
-        (quiz.description?.toLowerCase().contains(lowerQuery) ?? false) ||
-        (quiz.category?.toLowerCase().contains(lowerQuery) ?? false);
-  }).toList();
+  final quizzesAsync = ref.watch(userQuizzesProvider(userId));
+
+  return quizzesAsync.when(
+    data: (quizzes) {
+      if (query.isEmpty) return AsyncValue.data(quizzes);
+      final lowerQuery = query.toLowerCase();
+      final filtered = quizzes.where((quiz) {
+        return quiz.title.toLowerCase().contains(lowerQuery) ||
+            (quiz.description?.toLowerCase().contains(lowerQuery) ?? false) ||
+            (quiz.category?.toLowerCase().contains(lowerQuery) ?? false);
+      }).toList();
+      return AsyncValue.data(filtered);
+    },
+    loading: () => const AsyncValue.loading(),
+    error: (e, st) => AsyncValue.error(e, st),
+  );
 });

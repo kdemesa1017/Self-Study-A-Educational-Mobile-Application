@@ -32,17 +32,19 @@ class _FlashcardStudyScreenState extends ConsumerState<FlashcardStudyScreen> {
     final user = ref.read(currentUserProvider);
     if (user == null) return;
 
-    final (_, questions) = ref
+    final (_, questions) = await ref
         .read(userQuizzesProvider(user.id).notifier)
         .getQuizWithQuestions(widget.quizId);
 
     // Filter only flashcards or use all questions as flashcards
     final flashcards = questions.where((q) => q.isFlashcard).toList();
     
-    setState(() {
-      _questions = flashcards.isNotEmpty ? flashcards : questions;
-      _isLoading = false;
-    });
+    if (mounted) {
+      setState(() {
+        _questions = flashcards.isNotEmpty ? flashcards : questions;
+        _isLoading = false;
+      });
+    }
   }
 
   void _markKnown() {
@@ -158,12 +160,14 @@ class _FlashcardStudyScreenState extends ConsumerState<FlashcardStudyScreen> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(
+        resizeToAvoidBottomInset: false,
         body: Center(child: CircularProgressIndicator()),
       );
     }
 
     if (_questions.isEmpty) {
       return Scaffold(
+        resizeToAvoidBottomInset: false,
         appBar: AppBar(title: const Text('Flashcards')),
         body: Center(
           child: Column(
@@ -194,6 +198,7 @@ class _FlashcardStudyScreenState extends ConsumerState<FlashcardStudyScreen> {
     final progress = (_currentIndex + 1) / _questions.length;
 
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         title: const Text('Flashcards'),
         actions: [

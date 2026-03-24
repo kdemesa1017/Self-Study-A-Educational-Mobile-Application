@@ -1,35 +1,13 @@
-import 'package:hive/hive.dart';
-
-part 'user_model.g.dart';
-
-@HiveType(typeId: 0)
-class UserModel extends HiveObject {
-  @HiveField(0)
-  String id;
-
-  @HiveField(1)
-  String email;
-
-  @HiveField(2)
-  String name;
-
-  @HiveField(3)
-  String? profileImageUrl;
-
-  @HiveField(4)
-  int? age;
-
-  @HiveField(5)
-  String? address;
-
-  @HiveField(6)
-  String? bio;
-
-  @HiveField(7)
-  DateTime createdAt;
-
-  @HiveField(8)
-  DateTime? lastSyncedAt;
+class UserModel {
+  final String id;
+  final String email;
+  final String name;
+  final String? profileImageUrl;
+  final int? age;
+  final String? address;
+  final String? bio;
+  final DateTime createdAt;
+  final DateTime? lastSyncedAt;
 
   UserModel({
     required this.id,

@@ -1,11 +1,11 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../providers/auth_provider.dart';
-import '../../services/local_storage_service.dart';
+import '../../providers/quiz_provider.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -63,37 +63,56 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     setState(() => _isLoading = true);
 
-    // Upload image if selected
-    if (_selectedImage != null) {
-      final error = await ref.read(currentUserProvider.notifier).updateProfileImage(_selectedImage);
-      if (error != null && mounted) {
+    try {
+      // Upload image if selected
+      if (_selectedImage != null) {
+        final imageError = await ref
+            .read(currentUserProvider.notifier)
+            .updateProfileImage(_selectedImage);
+        if (!mounted) return;
+        if (imageError != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(imageError), backgroundColor: Colors.red),
+          );
+          return;
+        }
+      }
+
+      final ageText = _ageController.text.trim();
+      final age = ageText.isEmpty ? null : int.tryParse(ageText);
+      if (ageText.isNotEmpty && age == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please enter a valid age'), backgroundColor: Colors.red),
+        );
+        return;
+      }
+
+      // Update profile info
+      final error = await ref.read(currentUserProvider.notifier).updateProfile(
+        name: _nameController.text.trim(),
+        age: age,
+        address: _addressController.text.trim().isEmpty ? null : _addressController.text.trim(),
+        bio: _bioController.text.trim().isEmpty ? null : _bioController.text.trim(),
+      );
+
+      if (!mounted) return;
+
+      if (error != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(error), backgroundColor: Colors.red),
         );
+        return;
       }
-    }
 
-    // Update profile info
-    final error = await ref.read(currentUserProvider.notifier).updateProfile(
-      name: _nameController.text.trim(),
-      age: _ageController.text.isEmpty ? null : int.parse(_ageController.text),
-      address: _addressController.text.trim().isEmpty ? null : _addressController.text.trim(),
-      bio: _bioController.text.trim().isEmpty ? null : _bioController.text.trim(),
-    );
-
-    setState(() {
-      _isLoading = false;
-      _isEditing = false;
-    });
-
-    if (error != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error), backgroundColor: Colors.red),
-      );
-    } else if (mounted) {
+      setState(() => _isEditing = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Profile updated successfully')),
       );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -145,11 +164,31 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
 
     if (confirmed == true) {
-      await LocalStorageService.clearAllData();
-      await ref.read(currentUserProvider.notifier).signOut();
-      if (mounted) {
-        context.go('/login');
+      final error = await ref.read(currentUserProvider.notifier).clearAllData();
+      if (!mounted) return;
+      if (error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error), backgroundColor: Colors.red),
+        );
+        return;
       }
+
+      final user = ref.read(currentUserProvider);
+      if (user != null) {
+        // Clear any quiz state and force list providers to reload.
+        ref.read(searchQueryProvider.notifier).state = '';
+        ref.read(currentQuizProvider.notifier).state = null;
+        ref.read(currentQuestionsProvider.notifier).state = [];
+        ref.invalidate(userQuizzesProvider(user.id));
+        ref.invalidate(filteredQuizzesProvider(user.id));
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('All data deleted successfully.')),
+      );
+
+      // Stay logged in. Force the app to rebuild quiz screens by navigating.
+      context.go('/my-quizzes');
     }
   }
 
@@ -162,228 +201,230 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // Profile Picture
-            Hero(
-              tag: 'profile-avatar',
-              child: Stack(
-                children: [
-                  Container(
-                    width: 120,
-                    height: 120,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          theme.colorScheme.primary,
-                          theme.colorScheme.secondary,
-                        ],
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      behavior: HitTestBehavior.opaque,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Profile Picture
+              Hero(
+                tag: 'profile-avatar',
+                child: Stack(
+                  children: [
+                    Container(
+                      width: 120,
+                      height: 120,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            theme.colorScheme.primary,
+                            theme.colorScheme.secondary,
+                          ],
+                        ),
+                        shape: BoxShape.circle,
+                        image: _selectedImage != null
+                            ? DecorationImage(
+                                image: FileImage(_selectedImage!),
+                                fit: BoxFit.cover,
+                              )
+                            : (user.profileImageUrl != null
+                                ? DecorationImage(
+                                    image: NetworkImage(user.profileImageUrl!),
+                                    fit: BoxFit.cover,
+                                  )
+                                : null),
                       ),
-                      shape: BoxShape.circle,
-                      image: _selectedImage != null
-                          ? DecorationImage(
-                              image: FileImage(_selectedImage!),
-                              fit: BoxFit.cover,
-                            )
-                          : (user.profileImageUrl != null
-                              ? DecorationImage(
-                                  image: NetworkImage(user.profileImageUrl!),
-                                  fit: BoxFit.cover,
-                                )
-                              : null),
-                    ),
-                    child: _selectedImage == null && user.profileImageUrl == null
-                        ? Center(
-                            child: Text(
-                              user.name.substring(0, 1).toUpperCase(),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 48,
+                      child: _selectedImage == null && user.profileImageUrl == null
+                          ? Center(
+                              child: Text(
+                                user.name.substring(0, 1).toUpperCase(),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 48,
+                                ),
                               ),
+                            )
+                          : null,
+                    ),
+                    if (_isEditing)
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: GestureDetector(
+                          onTap: _pickImage,
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primary,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 2),
                             ),
-                          )
-                        : null,
-                  ),
-                  if (_isEditing)
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: GestureDetector(
-                        onTap: _pickImage,
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.primary,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 2),
-                          ),
-                          child: const Icon(
-                            Icons.camera_alt,
-                            color: Colors.white,
-                            size: 20,
+                            child: const Icon(
+                              Icons.camera_alt,
+                              color: Colors.white,
+                              size: 20,
+                            ),
                           ),
                         ),
                       ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                user.name,
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(
+                user.email,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: Colors.grey.shade600,
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Edit/Save Button
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (!_isEditing)
+                    ElevatedButton.icon(
+                      onPressed: () => setState(() => _isEditing = true),
+                      icon: const Icon(Icons.edit),
+                      label: const Text('Edit Profile'),
+                    )
+                  else
+                    Row(
+                      children: [
+                        OutlinedButton(
+                          onPressed: () => setState(() {
+                            _isEditing = false;
+                            _selectedImage = null;
+                            _nameController.text = user.name;
+                            _ageController.text = user.age?.toString() ?? '';
+                            _addressController.text = user.address ?? '';
+                            _bioController.text = user.bio ?? '';
+                          }),
+                          child: const Text('Cancel'),
+                        ),
+                        const SizedBox(width: 12),
+                        ElevatedButton.icon(
+                          onPressed: _isLoading ? null : _saveProfile,
+                          icon: _isLoading
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.save),
+                          label: const Text('Save'),
+                        ),
+                      ],
                     ),
                 ],
               ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              user.name,
-              style: theme.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            Text(
-              user.email,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: Colors.grey.shade600,
-              ),
-            ),
-            const SizedBox(height: 24),
+              const SizedBox(height: 32),
 
-            // Edit/Save Button
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (!_isEditing)
-                  ElevatedButton.icon(
-                    onPressed: () => setState(() => _isEditing = true),
-                    icon: const Icon(Icons.edit),
-                    label: const Text('Edit Profile'),
-                  )
-                else
-                  Row(
+              // Profile Fields
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
                     children: [
-                      OutlinedButton(
-                        onPressed: () => setState(() {
-                          _isEditing = false;
-                          _selectedImage = null;
-                          _nameController.text = user.name;
-                          _ageController.text = user.age?.toString() ?? '';
-                          _addressController.text = user.address ?? '';
-                          _bioController.text = user.bio ?? '';
-                        }),
-                        child: const Text('Cancel'),
+                      TextFormField(
+                        controller: _nameController,
+                        enabled: _isEditing,
+                        decoration: const InputDecoration(
+                          labelText: 'Full Name',
+                          prefixIcon: Icon(Icons.person_outline),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Please enter your name';
+                          }
+                          return null;
+                        },
                       ),
-                      const SizedBox(width: 12),
-                      ElevatedButton.icon(
-                        onPressed: _isLoading ? null : _saveProfile,
-                        icon: _isLoading
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.save),
-                        label: const Text('Save'),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _ageController,
+                        enabled: _isEditing,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        decoration: const InputDecoration(
+                          labelText: 'Age',
+                          prefixIcon: Icon(Icons.calendar_today_outlined),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _addressController,
+                        enabled: _isEditing,
+                        maxLines: 2,
+                        decoration: const InputDecoration(
+                          labelText: 'Address',
+                          prefixIcon: Icon(Icons.location_on_outlined),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _bioController,
+                        enabled: _isEditing,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          labelText: 'Bio',
+                          prefixIcon: Icon(Icons.info_outline),
+                        ),
                       ),
                     ],
                   ),
-              ],
-            ),
-            const SizedBox(height: 32),
-
-            // Profile Fields
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    TextFormField(
-                      controller: _nameController,
-                      enabled: _isEditing,
-                      decoration: const InputDecoration(
-                        labelText: 'Full Name',
-                        prefixIcon: Icon(Icons.person_outline),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Please enter your name';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _ageController,
-                      enabled: _isEditing,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Age',
-                        prefixIcon: Icon(Icons.calendar_today_outlined),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _addressController,
-                      enabled: _isEditing,
-                      maxLines: 2,
-                      decoration: const InputDecoration(
-                        labelText: 'Address',
-                        prefixIcon: Icon(Icons.location_on_outlined),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _bioController,
-                      enabled: _isEditing,
-                      maxLines: 3,
-                      decoration: const InputDecoration(
-                        labelText: 'Bio',
-                        prefixIcon: Icon(Icons.info_outline),
-                      ),
-                    ),
-                  ],
                 ),
               ),
-            ),
-            const SizedBox(height: 24),
+              const SizedBox(height: 24),
 
-            // Statistics
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Account Info',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
+              // Statistics
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Account Info',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    _buildInfoRow('Member since', _formatDate(user.createdAt)),
-                    if (user.lastSyncedAt != null)
-                      _buildInfoRow('Last synced', _formatDate(user.lastSyncedAt!)),
-                  ],
+                      const SizedBox(height: 12),
+                      _buildInfoRow('Member since', _formatDate(user.createdAt)),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 24),
+              const SizedBox(height: 24),
 
-            // Logout Button
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _logout,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red.shade50,
-                  foregroundColor: Colors.red,
+              // Logout Button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _logout,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.shade50,
+                    foregroundColor: Colors.red,
+                  ),
+                  icon: const Icon(Icons.logout),
+                  label: const Text('Logout'),
                 ),
-                icon: const Icon(Icons.logout),
-                label: const Text('Logout'),
               ),
-            ),
-            const SizedBox(height: 12),
+              const SizedBox(height: 12),
             
             // Clear Data Button
             SizedBox(
@@ -398,7 +439,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 
   Widget _buildInfoRow(String label, String value) {
