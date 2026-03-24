@@ -140,131 +140,206 @@ class _CreateQuizScreenState extends ConsumerState<CreateQuizScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final progress = (_currentStep + 1) / 2;
+
     return Scaffold(
       resizeToAvoidBottomInset: false,
-      body: Stepper(
-        currentStep: _currentStep,
-        onStepContinue: () {
-          if (_currentStep < 1) {
-            setState(() => _currentStep++);
-          } else {
-            _createQuiz();
-          }
-        },
-        onStepCancel: () {
-          if (_currentStep > 0) {
-            setState(() => _currentStep--);
-          }
-        },
-        onStepTapped: (step) => setState(() => _currentStep = step),
-        controlsBuilder: (context, details) {
-          return Padding(
-            padding: const EdgeInsets.only(top: 16),
-            child: Row(
-              children: [
-                if (_currentStep < 1)
-                  ElevatedButton(
-                    onPressed: details.onStepContinue,
-                    child: const Text('Next'),
-                  )
-                else
-                  ElevatedButton(
-                    onPressed: _isCreating ? null : _createQuiz,
-                    child: _isCreating
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Create Quiz'),
-                  ),
-                if (_currentStep > 0) ...[
-                  const SizedBox(width: 12),
-                  TextButton(
-                    onPressed: details.onStepCancel,
-                    child: const Text('Back'),
-                  ),
-                ],
+      body: SafeArea(
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                theme.colorScheme.primary.withValues(alpha: 0.08),
+                theme.colorScheme.surface,
               ],
             ),
-          );
-        },
-        steps: [
-          Step(
-            title: const Text('Quiz Details'),
-            content: Form(
-              key: _quizFormKey,
-              child: Column(
-                children: [
-                  TextFormField(
-                    controller: _titleController,
-                    decoration: const InputDecoration(
-                      labelText: 'Quiz Title *',
-                      hintText: 'e.g., Biology 101',
+          ),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Create a Quiz',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter a quiz title';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _descriptionController,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText: 'Description',
-                      hintText: 'Brief description of this quiz...',
+                    const SizedBox(height: 6),
+                    Text(
+                      _currentStep == 0
+                          ? 'Step 1 of 2  ·  Quiz details'
+                          : 'Step 2 of 2  ·  Add questions',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _categoryController,
-                    decoration: const InputDecoration(
-                      labelText: 'Category',
-                      hintText: 'e.g., Science, History, Math',
+                    const SizedBox(height: 10),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        value: progress,
+                        minHeight: 7,
+                        backgroundColor:
+                            theme.colorScheme.onSurface.withValues(alpha: 0.08),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ),
-          Step(
-            title: const Text('Questions'),
-            content: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Add Questions',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Add at least one question to your quiz',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.grey.shade600,
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: Material(
+                    elevation: 0,
+                    color: theme.colorScheme.surface,
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
+                        ),
+                      ),
+                      child: Stepper(
+                        type: StepperType.horizontal,
+                        currentStep: _currentStep,
+                        onStepContinue: () {
+                          if (_currentStep < 1) {
+                            setState(() => _currentStep++);
+                          } else {
+                            _createQuiz();
+                          }
+                        },
+                        onStepCancel: () {
+                          if (_currentStep > 0) {
+                            setState(() => _currentStep--);
+                          }
+                        },
+                        onStepTapped: (step) => setState(() => _currentStep = step),
+                        controlsBuilder: (context, details) {
+                          return Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: FilledButton(
+                                    onPressed: _currentStep < 1
+                                        ? details.onStepContinue
+                                        : (_isCreating ? null : _createQuiz),
+                                    child: _isCreating
+                                        ? const SizedBox(
+                                            width: 18,
+                                            height: 18,
+                                            child: CircularProgressIndicator(strokeWidth: 2),
+                                          )
+                                        : Text(_currentStep < 1 ? 'Continue' : 'Create Quiz'),
+                                  ),
+                                ),
+                                if (_currentStep > 0) ...[
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: OutlinedButton(
+                                      onPressed: details.onStepCancel,
+                                      child: const Text('Back'),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          );
+                        },
+                        steps: [
+                          Step(
+                            title: const Text('Details'),
+                            content: Form(
+                              key: _quizFormKey,
+                              child: Column(
+                                children: [
+                                  TextFormField(
+                                    controller: _titleController,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Quiz Title *',
+                                      hintText: 'e.g., Biology 101',
+                                    ),
+                                    validator: (value) {
+                                      if (value == null || value.isEmpty) {
+                                        return 'Please enter a quiz title';
+                                      }
+                                      return null;
+                                    },
+                                  ),
+                                  const SizedBox(height: 16),
+                                  TextFormField(
+                                    controller: _descriptionController,
+                                    maxLines: 2,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Description',
+                                      hintText: 'Brief description of this quiz...',
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  TextFormField(
+                                    controller: _categoryController,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Category',
+                                      hintText: 'e.g., Science, History, Math',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          Step(
+                            title: const Text('Questions'),
+                            content: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Add Questions',
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Add at least one question to your quiz',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                ..._questions.asMap().entries.map((entry) {
+                                  final index = entry.key;
+                                  final question = entry.value;
+                                  return _buildQuestionCard(index, question);
+                                }),
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    onPressed: _addQuestion,
+                                    icon: const Icon(Icons.add),
+                                    label: const Text('Add Question'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
-                const SizedBox(height: 16),
-                ..._questions.asMap().entries.map((entry) {
-                  final index = entry.key;
-                  final question = entry.value;
-                  return _buildQuestionCard(index, question);
-                }),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: _addQuestion,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Add Question'),
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
