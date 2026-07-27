@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/quiz_provider.dart';
+import '../../providers/connectivity_provider.dart';
 
 class CreateQuizScreen extends ConsumerStatefulWidget {
   const CreateQuizScreen({super.key});
@@ -84,24 +85,52 @@ class _CreateQuizScreenState extends ConsumerState<CreateQuizScreen> {
 
     setState(() => _isCreating = true);
 
-    final user = ref.read(currentUserProvider);
+    final user = ref.read(currentUserProvider).valueOrNull;
     if (user == null) {
       setState(() => _isCreating = false);
       return;
     }
 
-    // Create quiz
-    final quiz = await ref.read(userQuizzesProvider(user.id).notifier).createQuiz(
-      title: _titleController.text.trim(),
-      description: _descriptionController.text.trim().isEmpty 
-          ? null 
-          : _descriptionController.text.trim(),
-      category: _categoryController.text.trim().isEmpty 
-          ? null 
-          : _categoryController.text.trim(),
-    );
+    try {
+      final quiz = await ref.read(userQuizzesProvider(user.id).notifier).createQuiz(
+        title: _titleController.text.trim(),
+        description: _descriptionController.text.trim().isEmpty
+            ? null
+            : _descriptionController.text.trim(),
+        category: _categoryController.text.trim().isEmpty
+            ? null
+            : _categoryController.text.trim(),
+      );
 
-    if (quiz == null) {
+      for (final q in _questions) {
+        await ref.read(userQuizzesProvider(user.id).notifier).addQuestion(
+          quizId: quiz.id,
+          questionText: q.questionController.text.trim(),
+          options: q.isFlashcard
+              ? [q.backController.text.trim()]
+              : q.options.map((o) => o.text.trim()).toList(),
+          correctAnswerIndex: q.isFlashcard ? 0 : q.correctAnswerIndex,
+          isFlashcard: q.isFlashcard,
+          flashcardBack: q.isFlashcard ? q.backController.text.trim() : null,
+        );
+      }
+
+      setState(() => _isCreating = false);
+
+      if (mounted) {
+        final isOnline = await ref.read(connectivityServiceProvider).isOnline;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isOnline
+                  ? 'Quiz created successfully!'
+                  : 'Quiz saved offline. It will sync when you\'re back online.',
+            ),
+          ),
+        );
+        context.go('/my-quizzes');
+      }
+    } catch (_) {
       setState(() => _isCreating = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -111,30 +140,6 @@ class _CreateQuizScreenState extends ConsumerState<CreateQuizScreen> {
           ),
         );
       }
-      return;
-    }
-
-    // Add all questions
-    for (final q in _questions) {
-      await ref.read(userQuizzesProvider(user.id).notifier).addQuestion(
-        quizId: quiz.id,
-        questionText: q.questionController.text.trim(),
-        options: q.isFlashcard 
-            ? [q.backController.text.trim()] 
-            : q.options.map((o) => o.text.trim()).toList(),
-        correctAnswerIndex: q.isFlashcard ? 0 : q.correctAnswerIndex,
-        isFlashcard: q.isFlashcard,
-        flashcardBack: q.isFlashcard ? q.backController.text.trim() : null,
-      );
-    }
-
-    setState(() => _isCreating = false);
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Quiz created successfully!')),
-      );
-      context.go('/my-quizzes');
     }
   }
 
@@ -227,6 +232,15 @@ class _CreateQuizScreenState extends ConsumerState<CreateQuizScreen> {
                             padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
                             child: Row(
                               children: [
+                                if (_currentStep > 0) ...[
+                                  Expanded(
+                                    child: OutlinedButton(
+                                      onPressed: details.onStepCancel,
+                                      child: const Text('Back'),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                ],
                                 Expanded(
                                   child: FilledButton(
                                     onPressed: _currentStep < 1
@@ -241,15 +255,6 @@ class _CreateQuizScreenState extends ConsumerState<CreateQuizScreen> {
                                         : Text(_currentStep < 1 ? 'Continue' : 'Create Quiz'),
                                   ),
                                 ),
-                                if (_currentStep > 0) ...[
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: OutlinedButton(
-                                      onPressed: details.onStepCancel,
-                                      child: const Text('Back'),
-                                    ),
-                                  ),
-                                ],
                               ],
                             ),
                           );

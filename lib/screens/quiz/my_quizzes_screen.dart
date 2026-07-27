@@ -5,17 +5,22 @@ import '../../providers/auth_provider.dart';
 import '../../providers/quiz_provider.dart';
 import '../../models/quiz_model.dart';
 import 'package:intl/intl.dart';
+import '../../widgets/skeleton_loader.dart';
 
 class MyQuizzesScreen extends ConsumerWidget {
   const MyQuizzesScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(currentUserProvider);
+    final userAsync = ref.watch(currentUserProvider);
     final searchQuery = ref.watch(searchQueryProvider);
-    
+
+    // Show skeleton while auth is still initialising
+    if (userAsync.isLoading) return const PageSkeleton(list: true);
+
+    final user = userAsync.valueOrNull;
     if (user == null) {
-      return const Center(child: CircularProgressIndicator());
+      return const PageSkeleton(list: true);
     }
 
     final quizzesAsync = ref.watch(filteredQuizzesProvider(user.id));
@@ -32,14 +37,15 @@ class MyQuizzesScreen extends ConsumerWidget {
             decoration: InputDecoration(
               hintText: 'Search quizzes...',
               prefixIcon: const Icon(Icons.search),
-              suffixIcon: searchQuery.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear),
-                      onPressed: () {
-                        ref.read(searchQueryProvider.notifier).state = '';
-                      },
-                    )
-                  : null,
+              suffixIcon:
+                  searchQuery.isNotEmpty
+                      ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          ref.read(searchQueryProvider.notifier).state = '';
+                        },
+                      )
+                      : null,
             ),
           ),
         ),
@@ -47,42 +53,61 @@ class MyQuizzesScreen extends ConsumerWidget {
         // Quiz List
         Expanded(
           child: quizzesAsync.when(
-            data: (quizzes) => quizzes.isEmpty
-                ? _buildEmptyState(context)
-                : RefreshIndicator(
-                    onRefresh: () async {
-                      await ref.read(userQuizzesProvider(user.id).notifier).refreshQuizzes();
-                    },
-                    child: ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: quizzes.length,
-                      itemBuilder: (context, index) {
-                        final quiz = quizzes[index];
-                        return _buildQuizCard(context, ref, quiz, user.id);
-                      },
-                    ),
+            data:
+                (quizzes) =>
+                    quizzes.isEmpty
+                        ? _buildEmptyState(context)
+                        : RefreshIndicator(
+                          onRefresh: () async {
+                            await ref
+                                .read(userQuizzesProvider(user.id).notifier)
+                                .refreshQuizzes();
+                          },
+                          child: ListView.builder(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            itemCount: quizzes.length,
+                            itemBuilder: (context, index) {
+                              final quiz = quizzes[index];
+                              return _buildQuizCard(
+                                context,
+                                ref,
+                                quiz,
+                                user.id,
+                              );
+                            },
+                          ),
+                        ),
+            loading: () => const PageSkeleton(list: true),
+            error:
+                (e, _) => Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text('Error loading quizzes: $e'),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed:
+                            () =>
+                                ref
+                                    .read(userQuizzesProvider(user.id).notifier)
+                                    .refreshQuizzes(),
+                        child: const Text('Retry'),
+                      ),
+                    ],
                   ),
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('Error loading quizzes: $e'),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () => ref.read(userQuizzesProvider(user.id).notifier).refreshQuizzes(),
-                    child: const Text('Retry'),
-                  ),
-                ],
-              ),
-            ),
+                ),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildQuizCard(BuildContext context, WidgetRef ref, QuizModel quiz, String userId) {
+  Widget _buildQuizCard(
+    BuildContext context,
+    WidgetRef ref,
+    QuizModel quiz,
+    String userId,
+  ) {
     final theme = Theme.of(context);
     final dateFormat = DateFormat('MMM d, yyyy');
 
@@ -92,29 +117,34 @@ class MyQuizzesScreen extends ConsumerWidget {
       confirmDismiss: (direction) async {
         return await showDialog<bool>(
           context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Delete Quiz'),
-            content: Text('Are you sure you want to delete "${quiz.title}"?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel'),
+          builder:
+              (context) => AlertDialog(
+                title: const Text('Delete Quiz'),
+                content: Text(
+                  'Are you sure you want to delete "${quiz.title}"?',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Cancel'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                    child: const Text('Delete'),
+                  ),
+                ],
               ),
-              FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                style: FilledButton.styleFrom(backgroundColor: Colors.red),
-                child: const Text('Delete'),
-              ),
-            ],
-          ),
         );
       },
       onDismissed: (direction) async {
-        await ref.read(userQuizzesProvider(userId).notifier).deleteQuiz(quiz.id);
+        await ref
+            .read(userQuizzesProvider(userId).notifier)
+            .deleteQuiz(quiz.id);
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('"${quiz.title}" deleted')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('"${quiz.title}" deleted')));
         }
       },
       background: Container(
@@ -151,10 +181,7 @@ class MyQuizzesScreen extends ConsumerWidget {
                         ),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Icon(
-                        Icons.quiz,
-                        color: Colors.white,
-                      ),
+                      child: const Icon(Icons.quiz, color: Colors.white),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
@@ -244,10 +271,7 @@ class MyQuizzesScreen extends ConsumerWidget {
           const SizedBox(width: 4),
           Text(
             label,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey.shade700,
-            ),
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
           ),
         ],
       ),
@@ -275,9 +299,9 @@ class MyQuizzesScreen extends ConsumerWidget {
           const SizedBox(height: 8),
           Text(
             'Create your first quiz to get started!',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Colors.grey.shade500,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade500),
           ),
           const SizedBox(height: 24),
           ElevatedButton.icon(

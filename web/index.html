@@ -35,6 +35,10 @@
 <body>
   <!-- Firebase Configuration -->
   <script src="firebase-config.js"></script>
+  <!-- Force CanvasKit renderer to prevent HTML renderer assertion bugs on mobile emulators -->
+  <script>
+    window.flutterWebRenderer = "canvaskit";
+  </script>
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader

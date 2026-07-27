@@ -49,7 +49,8 @@ class _MainLayoutState extends ConsumerState<MainLayout> {
 
   @override
   Widget build(BuildContext context) {
-    final currentUser = ref.watch(currentUserProvider);
+    final currentUserAsync = ref.watch(currentUserProvider);
+    final currentUser = currentUserAsync.valueOrNull;
     final location = GoRouterState.of(context).matchedLocation;
     
     // Update current index based on route

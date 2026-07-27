@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -15,32 +13,23 @@ import 'screens/study/flashcard_study_screen.dart';
 import 'screens/study/quiz_study_screen.dart';
 import 'screens/profile/profile_screen.dart';
 import 'screens/main_layout.dart';
-
-class GoRouterRefreshStream extends ChangeNotifier {
-  late final StreamSubscription<dynamic> _subscription;
-
-  GoRouterRefreshStream(Stream<dynamic> stream) {
-    _subscription = stream.listen((_) => notifyListeners());
-  }
-
-  @override
-  void dispose() {
-    _subscription.cancel();
-    super.dispose();
-  }
-}
+import 'screens/ai_quiz/ai_quiz_generator_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
-  final authService = ref.watch(authServiceProvider);
-  final currentUser = ref.watch(currentUserProvider);
+  // Watch the async user state — AsyncLoading means auth hasn't resolved yet.
+  final currentUserAsync = ref.watch(currentUserProvider);
 
   return GoRouter(
     initialLocation: '/',
-    refreshListenable: GoRouterRefreshStream(authService.authStateChanges),
     redirect: (context, state) {
-      final isLoggedIn = authService.currentFirebaseUser != null || currentUser != null;
-      final isAuthRoute = state.matchedLocation == '/login' || 
-                          state.matchedLocation == '/register';
+      // While auth is still initialising, don't redirect at all.
+      // Cached session may already be loaded; avoid a flash to /login.
+      if (currentUserAsync.isLoading) return null;
+
+      final isLoggedIn = currentUserAsync.valueOrNull != null;
+      final isAuthRoute =
+          state.matchedLocation == '/login' ||
+          state.matchedLocation == '/register';
 
       if (!isLoggedIn && !isAuthRoute) {
         return '/login';
@@ -53,10 +42,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
-      GoRoute(
-        path: '/login',
-        builder: (context, state) => const LoginScreen(),
-      ),
+      GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
       GoRoute(
         path: '/register',
         builder: (context, state) => const RegisterScreen(),
@@ -64,10 +50,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ShellRoute(
         builder: (context, state, child) => MainLayout(child: child),
         routes: [
-          GoRoute(
-            path: '/',
-            builder: (context, state) => const HomeScreen(),
-          ),
+          GoRoute(path: '/', builder: (context, state) => const HomeScreen()),
           GoRoute(
             path: '/create-quiz',
             builder: (context, state) => const CreateQuizScreen(),
@@ -104,6 +87,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/profile',
             builder: (context, state) => const ProfileScreen(),
+          ),
+          GoRoute(
+            path: '/ai-generator',
+            builder: (context, state) => const AiQuizGeneratorScreen(),
           ),
         ],
       ),
@@ -145,7 +132,9 @@ class SelfStudyApp extends ConsumerWidget {
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
-          fillColor: Colors.grey.shade50,
+          fillColor: Colors.white,
+          labelStyle: const TextStyle(color: Color(0xFF374151)),
+          hintStyle: const TextStyle(color: Color(0xFF6B7280)),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide.none,
@@ -158,7 +147,10 @@ class SelfStudyApp extends ConsumerWidget {
             borderRadius: BorderRadius.circular(12),
             borderSide: const BorderSide(color: Color(0xFF6366F1), width: 2),
           ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 16,
+          ),
         ),
       ),
       darkTheme: ThemeData(
@@ -168,6 +160,24 @@ class SelfStudyApp extends ConsumerWidget {
         ),
         useMaterial3: true,
         fontFamily: 'Inter',
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: const Color(0xFF1F2937),
+          labelStyle: const TextStyle(color: Color(0xFFE5E7EB)),
+          hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFF4B5563)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFFA5B4FC), width: 2),
+          ),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 16,
+          ),
+        ),
       ),
       routerConfig: router,
     );

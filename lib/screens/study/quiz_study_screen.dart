@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/quiz_provider.dart';
 import '../../models/question_model.dart';
+import '../../widgets/skeleton_loader.dart';
 
 class QuizStudyScreen extends ConsumerStatefulWidget {
   final String quizId;
@@ -27,12 +28,15 @@ class _QuizStudyScreenState extends ConsumerState<QuizStudyScreen> {
   @override
   void initState() {
     super.initState();
-    _loadQuestions();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadQuestions());
   }
 
   Future<void> _loadQuestions() async {
-    final user = ref.read(currentUserProvider);
-    if (user == null) return;
+    final user = ref.read(currentUserProvider).valueOrNull;
+    if (user == null) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
 
     final (_, questions) = await ref
         .read(userQuizzesProvider(user.id).notifier)
@@ -40,7 +44,7 @@ class _QuizStudyScreenState extends ConsumerState<QuizStudyScreen> {
 
     // Filter out flashcards for quiz mode
     final quizQuestions = questions.where((q) => !q.isFlashcard).toList();
-    
+
     if (mounted) {
       setState(() {
         _questions = quizQuestions;
@@ -80,93 +84,93 @@ class _QuizStudyScreenState extends ConsumerState<QuizStudyScreen> {
   Future<void> _showResults() async {
     final total = _shuffledQuestions.length;
     final percentage = (_score / total * 100).round();
-    
+
     // Update quiz stats
-    final user = ref.read(currentUserProvider);
+    final user = ref.read(currentUserProvider).valueOrNull;
     if (user != null) {
-      await ref.read(userQuizzesProvider(user.id).notifier).updateQuizStats(
-        widget.quizId,
-        _score,
-        total,
-      );
+      await ref
+          .read(userQuizzesProvider(user.id).notifier)
+          .updateQuizStats(widget.quizId, _score, total);
     }
 
     if (mounted) {
       await showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          title: const Text('Quiz Complete!'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Score Circle
-              Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    colors: percentage >= 70
-                        ? [Colors.green, Colors.green.shade600]
+        builder:
+            (context) => AlertDialog(
+              title: const Text('Quiz Complete!'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Score Circle
+                  Container(
+                    width: 120,
+                    height: 120,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        colors:
+                            percentage >= 70
+                                ? [Colors.green, Colors.green.shade600]
+                                : percentage >= 50
+                                ? [Colors.orange, Colors.orange.shade600]
+                                : [Colors.red, Colors.red.shade600],
+                      ),
+                    ),
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            '$percentage%',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 32,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            '$_score/$total',
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    percentage >= 70
+                        ? 'Excellent work!'
                         : percentage >= 50
-                            ? [Colors.orange, Colors.orange.shade600]
-                            : [Colors.red, Colors.red.shade600],
-                  ),
-                ),
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        '$percentage%',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 32,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        '$_score/$total',
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                percentage >= 70
-                    ? 'Excellent work!'
-                    : percentage >= 50
                         ? 'Good job!'
                         : 'Keep practicing!',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                context.go('/study');
-              },
-              child: const Text('Done'),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    context.go('/study');
+                  },
+                  child: const Text('Done'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _restartQuiz();
+                  },
+                  child: const Text('Try Again'),
+                ),
+              ],
             ),
-            FilledButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _restartQuiz();
-              },
-              child: const Text('Try Again'),
-            ),
-          ],
-        ),
       );
     }
   }
@@ -187,7 +191,7 @@ class _QuizStudyScreenState extends ConsumerState<QuizStudyScreen> {
     if (_isLoading) {
       return const Scaffold(
         resizeToAvoidBottomInset: false,
-        body: Center(child: CircularProgressIndicator()),
+        body: PageSkeleton(),
       );
     }
 
@@ -199,11 +203,7 @@ class _QuizStudyScreenState extends ConsumerState<QuizStudyScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                Icons.quiz,
-                size: 64,
-                color: Colors.grey.shade400,
-              ),
+              Icon(Icons.quiz, size: 64, color: Colors.grey.shade400),
               const SizedBox(height: 16),
               Text(
                 'No quiz questions available',
@@ -212,9 +212,9 @@ class _QuizStudyScreenState extends ConsumerState<QuizStudyScreen> {
               const SizedBox(height: 8),
               Text(
                 'Add multiple-choice questions to this quiz',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey.shade600,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade600),
               ),
               const SizedBox(height: 16),
               ElevatedButton(
@@ -254,7 +254,7 @@ class _QuizStudyScreenState extends ConsumerState<QuizStudyScreen> {
             backgroundColor: Colors.grey.shade200,
             minHeight: 6,
           ),
-          
+
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
@@ -271,10 +271,9 @@ class _QuizStudyScreenState extends ConsumerState<QuizStudyScreen> {
                           vertical: 8,
                         ),
                         decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .primaryContainer
-                              .withOpacity(0.3),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.primaryContainer.withOpacity(0.3),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Row(
@@ -328,7 +327,11 @@ class _QuizStudyScreenState extends ConsumerState<QuizStudyScreen> {
                   ...currentQuestion.options.asMap().entries.map((entry) {
                     final index = entry.key;
                     final option = entry.value;
-                    return _buildOptionCard(index, option, currentQuestion.correctAnswerIndex);
+                    return _buildOptionCard(
+                      index,
+                      option,
+                      currentQuestion.correctAnswerIndex,
+                    );
                   }),
 
                   const SizedBox(height: 32),
@@ -340,7 +343,8 @@ class _QuizStudyScreenState extends ConsumerState<QuizStudyScreen> {
                       child: ElevatedButton(
                         onPressed: _nextQuestion,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Theme.of(context).colorScheme.primary,
+                          backgroundColor:
+                              Theme.of(context).colorScheme.primary,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                         ),
@@ -406,22 +410,24 @@ class _QuizStudyScreenState extends ConsumerState<QuizStudyScreen> {
               width: 32,
               height: 32,
               decoration: BoxDecoration(
-                color: isSelected || showCorrect || showWrong
-                    ? (showCorrect
-                        ? Colors.green
-                        : showWrong
+                color:
+                    isSelected || showCorrect || showWrong
+                        ? (showCorrect
+                            ? Colors.green
+                            : showWrong
                             ? Colors.red
                             : Theme.of(context).colorScheme.primary)
-                    : Colors.grey.shade200,
+                        : Colors.grey.shade200,
                 shape: BoxShape.circle,
               ),
               child: Center(
                 child: Text(
                   String.fromCharCode(65 + index),
                   style: TextStyle(
-                    color: isSelected || showCorrect || showWrong
-                        ? Colors.white
-                        : Colors.grey.shade700,
+                    color:
+                        isSelected || showCorrect || showWrong
+                            ? Colors.white
+                            : Colors.grey.shade700,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -437,8 +443,7 @@ class _QuizStudyScreenState extends ConsumerState<QuizStudyScreen> {
                 ),
               ),
             ),
-            if (trailingIcon != null)
-              Icon(trailingIcon, color: iconColor),
+            if (trailingIcon != null) Icon(trailingIcon, color: iconColor),
           ],
         ),
       ),

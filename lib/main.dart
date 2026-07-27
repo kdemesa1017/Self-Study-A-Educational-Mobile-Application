@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'services/local_quiz_store.dart';
 import 'app.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Firebase with web options if on web
+  // ── Firebase ────────────────────────────────────────────────────────────────
   if (kIsWeb) {
     await Firebase.initializeApp(
       options: const FirebaseOptions(
@@ -25,9 +28,18 @@ void main() async {
     await Firebase.initializeApp();
   }
 
-  runApp(
-    const ProviderScope(
-      child: SelfStudyApp(),
-    ),
-  );
+  // Enable Firestore offline persistence on mobile (Android/iOS).
+  // On web we skip this — it causes slow startup; Firestore already
+  // provides an in-memory cache within the browser session.
+  if (!kIsWeb) {
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: true,
+    );
+  }
+
+  // ── Hive (local offline cache) ───────────────────────────────────────────────
+  await Hive.initFlutter();
+  await LocalQuizStore.init();
+
+  runApp(const ProviderScope(child: SelfStudyApp()));
 }

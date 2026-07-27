@@ -13,6 +13,8 @@ class AuthBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final surfaceColor = isDark ? const Color(0xFF111827) : Colors.white;
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       behavior: HitTestBehavior.opaque,
@@ -23,30 +25,40 @@ class AuthBackground extends StatelessWidget {
           CachedNetworkImage(
             imageUrl: _bgImageUrl,
             fit: BoxFit.cover,
-            placeholder: (_, __) => Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
-                    Theme.of(context).colorScheme.secondary.withValues(alpha: 0.08),
-                  ],
+            placeholder:
+                (context, imageUrl) => Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Theme.of(
+                          context,
+                        ).colorScheme.primary.withValues(alpha: 0.15),
+                        Theme.of(
+                          context,
+                        ).colorScheme.secondary.withValues(alpha: 0.08),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            errorWidget: (_, __, ___) => Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
-                    Theme.of(context).colorScheme.secondary.withValues(alpha: 0.08),
-                  ],
+            errorWidget:
+                (context, imageUrl, error) => Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Theme.of(
+                          context,
+                        ).colorScheme.primary.withValues(alpha: 0.15),
+                        Theme.of(
+                          context,
+                        ).colorScheme.secondary.withValues(alpha: 0.08),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            ),
           ),
           // Gradient overlay for readability
           Container(
@@ -55,8 +67,8 @@ class AuthBackground extends StatelessWidget {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Colors.white.withValues(alpha: 0.92),
-                  Colors.white.withValues(alpha: 0.96),
+                  surfaceColor.withValues(alpha: 0.92),
+                  surfaceColor.withValues(alpha: 0.96),
                 ],
               ),
             ),

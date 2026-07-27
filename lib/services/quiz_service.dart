@@ -31,6 +31,51 @@ class QuizService {
     return quiz;
   }
 
+  /// Saves a quiz that was already created locally (preserves the local ID).
+  Future<void> saveQuiz(QuizModel quiz) async {
+    await _firestore.collection('quizzes').doc(quiz.id).set(quiz.toFirestore());
+  }
+
+  /// Saves a question that was already created locally and updates quiz metadata.
+  Future<void> saveQuestion(QuestionModel question) async {
+    await _firestore
+        .collection('questions')
+        .doc(question.id)
+        .set(question.toFirestore());
+
+    final quizDoc = await _firestore.collection('quizzes').doc(question.quizId).get();
+    if (quizDoc.exists && quizDoc.data() != null) {
+      final quiz = QuizModel.fromFirestore(quizDoc.data()!);
+      if (!quiz.questionIds.contains(question.id)) {
+        final updatedQuestionIds = [...quiz.questionIds, question.id];
+        await _firestore.collection('quizzes').doc(question.quizId).update({
+          'questionIds': updatedQuestionIds,
+          'lastModifiedAt': DateTime.now().toIso8601String(),
+        });
+      }
+    } else {
+      // Quiz may still be syncing — create a minimal quiz doc if needed.
+      await _firestore.collection('quizzes').doc(question.quizId).set({
+        'id': question.quizId,
+        'questionIds': [question.id],
+        'lastModifiedAt': DateTime.now().toIso8601String(),
+      }, SetOptions(merge: true));
+    }
+  }
+
+  /// Saves an AI-generated quiz and all its questions in a single batch write.
+  Future<void> saveGeneratedQuiz(
+    QuizModel quiz,
+    List<QuestionModel> questions,
+  ) async {
+    final batch = _firestore.batch();
+    batch.set(_firestore.collection('quizzes').doc(quiz.id), quiz.toFirestore());
+    for (final q in questions) {
+      batch.set(_firestore.collection('questions').doc(q.id), q.toFirestore());
+    }
+    await batch.commit();
+  }
+
   // Add question to quiz
   Future<QuestionModel> addQuestion({
     required String quizId,
@@ -203,7 +248,14 @@ class QuizService {
 
   // Get quiz with questions from Firestore
   Future<(QuizModel?, List<QuestionModel>)> getQuizWithQuestions(String quizId) async {
-    final quizDoc = await _firestore.collection('quizzes').doc(quizId).get();
+    final quizDoc = await _firestore
+        .collection('quizzes')
+        .doc(quizId)
+        .get()
+        .timeout(
+          _networkTimeout,
+          onTimeout: () => throw 'Request timed out. Please check your connection and try again.',
+        );
     if (!quizDoc.exists || quizDoc.data() == null) return (null, <QuestionModel>[]);
 
     final quiz = QuizModel.fromFirestore(quizDoc.data()!);
@@ -211,7 +263,11 @@ class QuizService {
     final questionsSnapshot = await _firestore
         .collection('questions')
         .where('quizId', isEqualTo: quizId)
-        .get();
+        .get()
+        .timeout(
+          _networkTimeout,
+          onTimeout: () => throw 'Request timed out. Please check your connection and try again.',
+        );
 
     final questions = questionsSnapshot.docs
         .map<QuestionModel>((doc) => QuestionModel.fromFirestore(doc.data()))

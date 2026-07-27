@@ -1,0 +1,23 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Flutter Web (Chrome)",
+      "request": "launch",
+      "type": "dart",
+      "args": ["-d", "chrome", "--web-renderer", "canvaskit"]
+    },
+    {
+      "name": "Flutter Web (Web Server)",
+      "request": "launch",
+      "type": "dart",
+      "args": ["-d", "web-server", "--web-renderer", "canvaskit"]
+    },
+    {
+      "name": "Flutter Web (Edge)",
+      "request": "launch",
+      "type": "dart",
+      "args": ["-d", "edge", "--web-renderer", "canvaskit"]
+    }
+  ]
+}

@@ -5,6 +5,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/quiz_provider.dart';
 import '../../models/quiz_model.dart';
 import '../../models/question_model.dart';
+import '../../widgets/skeleton_loader.dart';
 
 class QuizDetailScreen extends ConsumerStatefulWidget {
   final String quizId;
@@ -19,13 +20,11 @@ class _EditQuizBottomSheet extends ConsumerStatefulWidget {
   final QuizModel quiz;
   final VoidCallback onSaved;
 
-  const _EditQuizBottomSheet({
-    required this.quiz,
-    required this.onSaved,
-  });
+  const _EditQuizBottomSheet({required this.quiz, required this.onSaved});
 
   @override
-  ConsumerState<_EditQuizBottomSheet> createState() => _EditQuizBottomSheetState();
+  ConsumerState<_EditQuizBottomSheet> createState() =>
+      _EditQuizBottomSheetState();
 }
 
 class _EditQuizBottomSheetState extends ConsumerState<_EditQuizBottomSheet> {
@@ -39,8 +38,12 @@ class _EditQuizBottomSheetState extends ConsumerState<_EditQuizBottomSheet> {
   void initState() {
     super.initState();
     _titleController = TextEditingController(text: widget.quiz.title);
-    _descriptionController = TextEditingController(text: widget.quiz.description ?? '');
-    _categoryController = TextEditingController(text: widget.quiz.category ?? '');
+    _descriptionController = TextEditingController(
+      text: widget.quiz.description ?? '',
+    );
+    _categoryController = TextEditingController(
+      text: widget.quiz.category ?? '',
+    );
   }
 
   @override
@@ -55,21 +58,25 @@ class _EditQuizBottomSheetState extends ConsumerState<_EditQuizBottomSheet> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isSaving = true);
 
-    final user = ref.read(currentUserProvider);
+    final user = ref.read(currentUserProvider).valueOrNull;
     if (user == null) {
       setState(() => _isSaving = false);
       return;
     }
 
-    await ref.read(userQuizzesProvider(user.id).notifier).updateQuiz(
+    await ref
+        .read(userQuizzesProvider(user.id).notifier)
+        .updateQuiz(
           quizId: widget.quiz.id,
           title: _titleController.text.trim(),
-          description: _descriptionController.text.trim().isEmpty
-              ? null
-              : _descriptionController.text.trim(),
-          category: _categoryController.text.trim().isEmpty
-              ? null
-              : _categoryController.text.trim(),
+          description:
+              _descriptionController.text.trim().isEmpty
+                  ? null
+                  : _descriptionController.text.trim(),
+          category:
+              _categoryController.text.trim().isEmpty
+                  ? null
+                  : _categoryController.text.trim(),
         );
 
     if (!mounted) return;
@@ -108,9 +115,7 @@ class _EditQuizBottomSheetState extends ConsumerState<_EditQuizBottomSheet> {
             const SizedBox(height: 12),
             TextFormField(
               controller: _titleController,
-              decoration: const InputDecoration(
-                labelText: 'Quiz Title *',
-              ),
+              decoration: const InputDecoration(labelText: 'Quiz Title *'),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
                   return 'Please enter a quiz title';
@@ -122,29 +127,26 @@ class _EditQuizBottomSheetState extends ConsumerState<_EditQuizBottomSheet> {
             TextFormField(
               controller: _descriptionController,
               maxLines: 2,
-              decoration: const InputDecoration(
-                labelText: 'Description',
-              ),
+              decoration: const InputDecoration(labelText: 'Description'),
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _categoryController,
-              decoration: const InputDecoration(
-                labelText: 'Category',
-              ),
+              decoration: const InputDecoration(labelText: 'Category'),
             ),
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: _isSaving ? null : _save,
-                child: _isSaving
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Save Changes'),
+                child:
+                    _isSaving
+                        ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                        : const Text('Save Changes'),
               ),
             ),
           ],
@@ -168,7 +170,8 @@ class _EditQuestionBottomSheet extends ConsumerStatefulWidget {
       _EditQuestionBottomSheetState();
 }
 
-class _EditQuestionBottomSheetState extends ConsumerState<_EditQuestionBottomSheet> {
+class _EditQuestionBottomSheetState
+    extends ConsumerState<_EditQuestionBottomSheet> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _questionController;
   late final TextEditingController _backController;
@@ -184,13 +187,19 @@ class _EditQuestionBottomSheetState extends ConsumerState<_EditQuestionBottomShe
     _isFlashcard = widget.question.isFlashcard;
     _correctAnswerIndex = widget.question.correctAnswerIndex;
 
-    _questionController = TextEditingController(text: widget.question.questionText);
-    _backController = TextEditingController(text: widget.question.flashcardBack ?? '');
+    _questionController = TextEditingController(
+      text: widget.question.questionText,
+    );
+    _backController = TextEditingController(
+      text: widget.question.flashcardBack ?? '',
+    );
 
     final initialOptions = widget.question.options;
     _optionControllers = List.generate(
       4,
-      (i) => TextEditingController(text: i < initialOptions.length ? initialOptions[i] : ''),
+      (i) => TextEditingController(
+        text: i < initialOptions.length ? initialOptions[i] : '',
+      ),
     );
   }
 
@@ -208,17 +217,20 @@ class _EditQuestionBottomSheetState extends ConsumerState<_EditQuestionBottomShe
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isSaving = true);
 
-    final user = ref.read(currentUserProvider);
+    final user = ref.read(currentUserProvider).valueOrNull;
     if (user == null) {
       setState(() => _isSaving = false);
       return;
     }
 
-    final options = _isFlashcard
-        ? [_backController.text.trim()]
-        : _optionControllers.map((c) => c.text.trim()).toList();
+    final options =
+        _isFlashcard
+            ? [_backController.text.trim()]
+            : _optionControllers.map((c) => c.text.trim()).toList();
 
-    await ref.read(userQuizzesProvider(user.id).notifier).updateQuestion(
+    await ref
+        .read(userQuizzesProvider(user.id).notifier)
+        .updateQuestion(
           questionId: widget.question.id,
           questionText: _questionController.text.trim(),
           options: options,
@@ -276,9 +288,7 @@ class _EditQuestionBottomSheetState extends ConsumerState<_EditQuestionBottomShe
             const SizedBox(height: 12),
             TextFormField(
               controller: _questionController,
-              decoration: const InputDecoration(
-                labelText: 'Question *',
-              ),
+              decoration: const InputDecoration(labelText: 'Question *'),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
                   return 'Please enter a question';
@@ -343,13 +353,14 @@ class _EditQuestionBottomSheetState extends ConsumerState<_EditQuestionBottomShe
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: _isSaving ? null : _save,
-                child: _isSaving
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Save Changes'),
+                child:
+                    _isSaving
+                        ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                        : const Text('Save Changes'),
               ),
             ),
           ],
@@ -371,37 +382,34 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
   }
 
   Future<void> _editQuiz() async {
-    final user = ref.read(currentUserProvider);
+    final user = ref.read(currentUserProvider).valueOrNull;
     if (user == null || _quiz == null) return;
     if (_quiz!.userId != user.id) return;
 
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (context) => _EditQuizBottomSheet(
-        quiz: _quiz!,
-        onSaved: _loadQuiz,
-      ),
+      builder:
+          (context) => _EditQuizBottomSheet(quiz: _quiz!, onSaved: _loadQuiz),
     );
   }
 
   Future<void> _editQuestion(QuestionModel question) async {
-    final user = ref.read(currentUserProvider);
+    final user = ref.read(currentUserProvider).valueOrNull;
     if (user == null || _quiz == null) return;
     if (_quiz!.userId != user.id) return;
 
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (context) => _EditQuestionBottomSheet(
-        question: question,
-        onSaved: _loadQuiz,
-      ),
+      builder:
+          (context) =>
+              _EditQuestionBottomSheet(question: question, onSaved: _loadQuiz),
     );
   }
 
   Future<void> _loadQuiz() async {
-    final user = ref.read(currentUserProvider);
+    final user = ref.read(currentUserProvider).valueOrNull;
     if (user == null) return;
 
     final (quiz, questions) = await ref
@@ -427,25 +435,28 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
   Future<void> _deleteQuestion(String questionId) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Question'),
-        content: const Text('Are you sure you want to delete this question?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Delete Question'),
+            content: const Text(
+              'Are you sure you want to delete this question?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Delete'),
+              ),
+            ],
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
     );
 
     if (confirmed == true) {
-      final user = ref.read(currentUserProvider);
+      final user = ref.read(currentUserProvider).valueOrNull;
       if (user != null) {
         await ref
             .read(userQuizzesProvider(user.id).notifier)
@@ -458,25 +469,26 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
   Future<void> _deleteQuiz() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Quiz'),
-        content: Text('Are you sure you want to delete "${_quiz?.title}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Delete Quiz'),
+            content: Text('Are you sure you want to delete "${_quiz?.title}"?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Delete'),
+              ),
+            ],
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
     );
 
     if (confirmed == true) {
-      final user = ref.read(currentUserProvider);
+      final user = ref.read(currentUserProvider).valueOrNull;
       if (user != null) {
         await ref
             .read(userQuizzesProvider(user.id).notifier)
@@ -496,19 +508,19 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
     if (_isLoading) {
       return const Scaffold(
         resizeToAvoidBottomInset: false,
-        body: Center(child: CircularProgressIndicator()),
+        body: PageSkeleton(list: true),
       );
     }
 
     if (_quiz == null) {
       return const Scaffold(
         resizeToAvoidBottomInset: false,
-        body: Center(child: CircularProgressIndicator()),
+        body: PageSkeleton(list: true),
       );
     }
 
     final theme = Theme.of(context);
-    final currentUser = ref.read(currentUserProvider);
+    final currentUser = ref.read(currentUserProvider).valueOrNull;
     final canEdit = currentUser != null && _quiz!.userId == currentUser.id;
 
     return Scaffold(
@@ -613,37 +625,41 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
                       break;
                   }
                 },
-                itemBuilder: (context) => [
-                  PopupMenuItem(
-                    value: 'edit',
-                    enabled: canEdit,
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.edit_outlined,
-                          color: canEdit ? null : Colors.grey,
+                itemBuilder:
+                    (context) => [
+                      PopupMenuItem(
+                        value: 'edit',
+                        enabled: canEdit,
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.edit_outlined,
+                              color: canEdit ? null : Colors.grey,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Edit Quiz',
+                              style: TextStyle(
+                                color: canEdit ? null : Colors.grey,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Edit Quiz',
-                          style: TextStyle(
-                            color: canEdit ? null : Colors.grey,
-                          ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete_outline, color: Colors.red),
+                            SizedBox(width: 8),
+                            Text(
+                              'Delete Quiz',
+                              style: TextStyle(color: Colors.red),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Row(
-                      children: [
-                        Icon(Icons.delete_outline, color: Colors.red),
-                        SizedBox(width: 8),
-                        Text('Delete Quiz', style: TextStyle(color: Colors.red)),
-                      ],
-                    ),
-                  ),
-                ],
+                      ),
+                    ],
               ),
             ],
           ),
@@ -687,9 +703,12 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
                 children: [
                   Expanded(
                     child: ElevatedButton.icon(
-                      onPressed: _questions.isEmpty
-                          ? null
-                          : () => context.push('/study/flashcard/${widget.quizId}'),
+                      onPressed:
+                          _questions.isEmpty
+                              ? null
+                              : () => context.push(
+                                '/study/flashcard/${widget.quizId}',
+                              ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.orange,
                         foregroundColor: Colors.white,
@@ -702,9 +721,11 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: ElevatedButton.icon(
-                      onPressed: _questions.isEmpty
-                          ? null
-                          : () => context.push('/study/quiz/${widget.quizId}'),
+                      onPressed:
+                          _questions.isEmpty
+                              ? null
+                              : () =>
+                                  context.push('/study/quiz/${widget.quizId}'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green,
                         foregroundColor: Colors.white,
@@ -744,18 +765,13 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
 
           // Questions List
           if (_questions.isEmpty)
-            SliverToBoxAdapter(
-              child: _buildEmptyQuestionsState(context),
-            )
+            SliverToBoxAdapter(child: _buildEmptyQuestionsState(context))
           else
             SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final question = _questions[index];
-                  return _buildQuestionTile(context, question);
-                },
-                childCount: _questions.length,
-              ),
+              delegate: SliverChildBuilderDelegate((context, index) {
+                final question = _questions[index];
+                return _buildQuestionTile(context, question);
+              }, childCount: _questions.length),
             ),
 
           const SliverPadding(padding: EdgeInsets.only(bottom: 32)),
@@ -774,7 +790,9 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+          color: Theme.of(
+            context,
+          ).colorScheme.primaryContainer.withOpacity(0.3),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
@@ -783,14 +801,11 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
             const SizedBox(height: 4),
             Text(
               value,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
-            Text(
-              label,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+            Text(label, style: Theme.of(context).textTheme.bodySmall),
           ],
         ),
       ),
@@ -798,8 +813,9 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
   }
 
   Widget _buildQuestionTile(BuildContext context, QuestionModel question) {
-    final currentUser = ref.read(currentUserProvider);
-    final canEdit = currentUser != null && _quiz != null && _quiz!.userId == currentUser.id;
+    final currentUser = ref.read(currentUserProvider).valueOrNull;
+    final canEdit =
+        currentUser != null && _quiz != null && _quiz!.userId == currentUser.id;
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -810,16 +826,18 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),
-        subtitle: question.isFlashcard
-            ? const Text('Flashcard')
-            : Text('${question.options.length} options'),
+        subtitle:
+            question.isFlashcard
+                ? const Text('Flashcard')
+                : Text('${question.options.length} options'),
         leading: Container(
           width: 36,
           height: 36,
           decoration: BoxDecoration(
-            color: question.isFlashcard
-                ? Colors.orange.withOpacity(0.2)
-                : Colors.blue.withOpacity(0.2),
+            color:
+                question.isFlashcard
+                    ? Colors.orange.withOpacity(0.2)
+                    : Colors.blue.withOpacity(0.2),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(
@@ -846,17 +864,13 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
       ),
       child: Column(
         children: [
-          Icon(
-            Icons.help_outline,
-            size: 48,
-            color: Colors.grey.shade400,
-          ),
+          Icon(Icons.help_outline, size: 48, color: Colors.grey.shade400),
           const SizedBox(height: 12),
           Text(
             'No questions yet',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: Colors.grey.shade600,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(color: Colors.grey.shade600),
           ),
           const SizedBox(height: 16),
           ElevatedButton.icon(
@@ -875,10 +889,11 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) => _AddQuestionBottomSheet(
-        quizId: widget.quizId,
-        onQuestionAdded: _loadQuiz,
-      ),
+      builder:
+          (context) => _AddQuestionBottomSheet(
+            quizId: widget.quizId,
+            onQuestionAdded: _loadQuiz,
+          ),
     );
   }
 }
@@ -927,18 +942,21 @@ class _AddQuestionBottomSheetState
 
     setState(() => _isSaving = true);
 
-    final user = ref.read(currentUserProvider);
+    final user = ref.read(currentUserProvider).valueOrNull;
     if (user != null) {
-      await ref.read(userQuizzesProvider(user.id).notifier).addQuestion(
-        quizId: widget.quizId,
-        questionText: _questionController.text.trim(),
-        options: _isFlashcard
-            ? [_backController.text.trim()]
-            : _optionControllers.map((c) => c.text).toList(),
-        correctAnswerIndex: _isFlashcard ? 0 : _correctAnswerIndex,
-        isFlashcard: _isFlashcard,
-        flashcardBack: _isFlashcard ? _backController.text.trim() : null,
-      );
+      await ref
+          .read(userQuizzesProvider(user.id).notifier)
+          .addQuestion(
+            quizId: widget.quizId,
+            questionText: _questionController.text.trim(),
+            options:
+                _isFlashcard
+                    ? [_backController.text.trim()]
+                    : _optionControllers.map((c) => c.text).toList(),
+            correctAnswerIndex: _isFlashcard ? 0 : _correctAnswerIndex,
+            isFlashcard: _isFlashcard,
+            flashcardBack: _isFlashcard ? _backController.text.trim() : null,
+          );
 
       if (mounted) {
         Navigator.pop(context);
@@ -1035,9 +1053,10 @@ class _AddQuestionBottomSheetState
                                 controller: controller,
                                 decoration: InputDecoration(
                                   labelText: 'Option ${index + 1}',
-                                  hintText: index == 0
-                                      ? 'Correct answer'
-                                      : 'Wrong answer',
+                                  hintText:
+                                      index == 0
+                                          ? 'Correct answer'
+                                          : 'Wrong answer',
                                 ),
                                 validator: (value) {
                                   if (value == null || value.isEmpty) {
@@ -1058,13 +1077,14 @@ class _AddQuestionBottomSheetState
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: _isSaving ? null : _saveQuestion,
-                  child: _isSaving
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Add Question'),
+                  child:
+                      _isSaving
+                          ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                          : const Text('Add Question'),
                 ),
               ),
             ],

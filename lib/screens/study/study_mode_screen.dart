@@ -4,39 +4,50 @@ import 'package:go_router/go_router.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/quiz_provider.dart';
 import '../../models/quiz_model.dart';
+import '../../widgets/skeleton_loader.dart';
 
 class StudyModeScreen extends ConsumerWidget {
   const StudyModeScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(currentUserProvider);
-    
+    final userAsync = ref.watch(currentUserProvider);
+
+    // Show skeleton while auth is still initialising
+    if (userAsync.isLoading) return const PageSkeleton(list: true);
+
+    final user = userAsync.valueOrNull;
     if (user == null) {
-      return const Center(child: CircularProgressIndicator());
+      return const PageSkeleton(list: true);
     }
 
     final quizzesAsync = ref.watch(userQuizzesProvider(user.id));
 
     return quizzesAsync.when(
       data: (quizzes) {
-        final quizzesWithQuestions = quizzes.where((q) => q.questionIds.isNotEmpty).toList();
+        final quizzesWithQuestions =
+            quizzes.where((q) => q.questionIds.isNotEmpty).toList();
         return _buildContent(context, quizzes, quizzesWithQuestions);
       },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text('Error loading quizzes: $e'),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () => ref.read(userQuizzesProvider(user.id).notifier).refreshQuizzes(),
-              child: const Text('Retry'),
+      loading: () => const PageSkeleton(list: true),
+      error:
+          (e, _) => Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text('Error loading quizzes: $e'),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed:
+                      () =>
+                          ref
+                              .read(userQuizzesProvider(user.id).notifier)
+                              .refreshQuizzes(),
+                  child: const Text('Retry'),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
     );
   }
 
@@ -102,7 +113,8 @@ class StudyModeScreen extends ConsumerWidget {
                   context,
                   icon: Icons.school_outlined,
                   title: 'Studied',
-                  value: '${quizzes.fold<int>(0, (sum, q) => sum + (q.studyCount ?? 0))}',
+                  value:
+                      '${quizzes.fold<int>(0, (sum, q) => sum + (q.studyCount ?? 0))}',
                 ),
               ),
             ],
@@ -112,9 +124,9 @@ class StudyModeScreen extends ConsumerWidget {
           // Study Modes Info
           Text(
             'Study Modes',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 16),
           Row(
@@ -145,12 +157,12 @@ class StudyModeScreen extends ConsumerWidget {
           // Available Quizzes
           Text(
             'Select a Quiz to Study',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 16),
-          
+
           if (quizzesWithQuestions.isEmpty)
             _buildEmptyState(context)
           else
@@ -187,14 +199,11 @@ class StudyModeScreen extends ConsumerWidget {
           const SizedBox(height: 8),
           Text(
             value,
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
           ),
-          Text(
-            title,
-            style: TextStyle(color: Colors.grey.shade600),
-          ),
+          Text(title, style: TextStyle(color: Colors.grey.shade600)),
         ],
       ),
     );
@@ -229,9 +238,9 @@ class StudyModeScreen extends ConsumerWidget {
           const SizedBox(height: 4),
           Text(
             description,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Colors.grey.shade600,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: Colors.grey.shade600),
           ),
         ],
       ),
@@ -308,24 +317,20 @@ class StudyModeScreen extends ConsumerWidget {
       ),
       child: Column(
         children: [
-          Icon(
-            Icons.school_outlined,
-            size: 64,
-            color: Colors.grey.shade400,
-          ),
+          Icon(Icons.school_outlined, size: 64, color: Colors.grey.shade400),
           const SizedBox(height: 16),
           Text(
             'No quizzes available',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              color: Colors.grey.shade600,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(color: Colors.grey.shade600),
           ),
           const SizedBox(height: 8),
           Text(
             'Create quizzes with questions to start studying',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Colors.grey.shade500,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade500),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 16),

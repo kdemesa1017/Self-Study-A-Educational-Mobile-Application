@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/quiz_provider.dart';
+import '../../widgets/skeleton_loader.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -22,13 +23,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   late TextEditingController _bioController;
   bool _isEditing = false;
   bool _isLoading = false;
-  File? _selectedImage;
+  Uint8List? _selectedImageBytes;
   final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
-    final user = ref.read(currentUserProvider);
+    final user = ref.read(currentUserProvider).valueOrNull;
     _nameController = TextEditingController(text: user?.name ?? '');
     _ageController = TextEditingController(text: user?.age?.toString() ?? '');
     _addressController = TextEditingController(text: user?.address ?? '');
@@ -45,16 +46,53 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Future<void> _pickImage() async {
-    final XFile? image = await _picker.pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 500,
-      maxHeight: 500,
-      imageQuality: 85,
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder:
+          (context) => SafeArea(
+            child: Wrap(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: const Text('Choose from gallery'),
+                  onTap: () => Navigator.pop(context, ImageSource.gallery),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.camera_alt_outlined),
+                  title: const Text('Take a photo'),
+                  onTap: () => Navigator.pop(context, ImageSource.camera),
+                ),
+              ],
+            ),
+          ),
     );
-    if (image != null) {
-      setState(() {
-        _selectedImage = File(image.path);
-      });
+    if (source == null) return;
+
+    try {
+      final image = await _picker.pickImage(
+        source: source,
+        maxWidth: 500,
+        maxHeight: 500,
+        imageQuality: 85,
+      );
+      if (image == null) return;
+      final bytes = await image.readAsBytes();
+      if (!mounted) return;
+      setState(() => _selectedImageBytes = bytes);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to access the selected image.')),
+      );
+    }
+  }
+
+  Uint8List? _decodeAvatar(String? value) {
+    if (value == null || value.isEmpty) return null;
+    try {
+      return base64Decode(value);
+    } catch (_) {
+      return null;
     }
   }
 
@@ -64,37 +102,35 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // Upload image if selected
-      if (_selectedImage != null) {
-        final imageError = await ref
-            .read(currentUserProvider.notifier)
-            .updateProfileImage(_selectedImage!);
-        if (!mounted) return;
-        if (imageError != null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(imageError), backgroundColor: Colors.red),
-          );
-          return;
-        }
-      }
-
       final ageText = _ageController.text.trim();
       final age = ageText.isEmpty ? null : int.tryParse(ageText);
       if (ageText.isNotEmpty && age == null) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please enter a valid age'), backgroundColor: Colors.red),
+          const SnackBar(
+            content: Text('Please enter a valid age'),
+            backgroundColor: Colors.red,
+          ),
         );
         return;
       }
 
-      // Update profile info
-      final error = await ref.read(currentUserProvider.notifier).updateProfile(
-        name: _nameController.text.trim(),
-        age: age,
-        address: _addressController.text.trim().isEmpty ? null : _addressController.text.trim(),
-        bio: _bioController.text.trim().isEmpty ? null : _bioController.text.trim(),
-      );
+      // Update profile info (and upload image if selected) in one call
+      final error = await ref
+          .read(currentUserProvider.notifier)
+          .updateProfile(
+            name: _nameController.text.trim(),
+            age: age,
+            address:
+                _addressController.text.trim().isEmpty
+                    ? null
+                    : _addressController.text.trim(),
+            bio:
+                _bioController.text.trim().isEmpty
+                    ? null
+                    : _bioController.text.trim(),
+            profileImageBytes: _selectedImageBytes,
+          );
 
       if (!mounted) return;
 
@@ -105,7 +141,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         return;
       }
 
-      setState(() => _isEditing = false);
+      setState(() {
+        _isEditing = false;
+        _selectedImageBytes = null;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Profile updated successfully')),
       );
@@ -119,20 +158,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Future<void> _logout() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Logout'),
-        content: const Text('Are you sure you want to logout?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Logout'),
+            content: const Text('Are you sure you want to logout?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Logout'),
+              ),
+            ],
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Logout'),
-          ),
-        ],
-      ),
     );
 
     if (confirmed == true) {
@@ -146,21 +186,24 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Future<void> _clearAllData() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Clear All Data'),
-        content: const Text('This will delete all your quizzes and data. This action cannot be undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Clear All Data'),
+            content: const Text(
+              'This will delete all your quizzes and data. This action cannot be undone.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Delete'),
+              ),
+            ],
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
     );
 
     if (confirmed == true) {
@@ -173,7 +216,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         return;
       }
 
-      final user = ref.read(currentUserProvider);
+      final user = ref.read(currentUserProvider).valueOrNull;
       if (user != null) {
         // Clear any quiz state and force list providers to reload.
         ref.read(searchQueryProvider.notifier).state = '';
@@ -194,12 +237,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final user = ref.watch(currentUserProvider);
+    final userAsync = ref.watch(currentUserProvider);
     final theme = Theme.of(context);
 
+    // Show skeleton while auth is initialising
+    if (userAsync.isLoading) return const ProfileSkeleton();
+
+    final user = userAsync.valueOrNull;
     if (user == null) {
-      return const Center(child: CircularProgressIndicator());
+      return const ProfileSkeleton();
     }
+    final storedAvatar = _decodeAvatar(user.profileImageBase64);
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
@@ -229,44 +277,60 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         shape: BoxShape.circle,
                       ),
                       clipBehavior: Clip.antiAlias,
-                      child: _selectedImage != null
-                          ? Image.file(
-                              _selectedImage!,
-                              fit: BoxFit.cover,
-                              width: 120,
-                              height: 120,
-                            )
-                          : (user.profileImageUrl != null
-                              ? Image.network(
-                                  user.profileImageUrl!,
-                                  fit: BoxFit.cover,
-                                  width: 120,
-                                  height: 120,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    // Silently fall back to initials if
-                                    // the stored image URL is broken/missing.
-                                    return Center(
-                                      child: Text(
-                                        user.name.substring(0, 1).toUpperCase(),
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 48,
+                      child:
+                          _selectedImageBytes != null
+                              ? Image.memory(
+                                _selectedImageBytes!,
+                                fit: BoxFit.cover,
+                                width: 120,
+                                height: 120,
+                              )
+                              : (storedAvatar != null
+                                  ? Image.memory(
+                                    storedAvatar,
+                                    fit: BoxFit.cover,
+                                    width: 120,
+                                    height: 120,
+                                  )
+                                  : (user.profileImageUrl != null
+                                      ? Image.network(
+                                        user.profileImageUrl!,
+                                        fit: BoxFit.cover,
+                                        width: 120,
+                                        height: 120,
+                                        errorBuilder: (
+                                          context,
+                                          error,
+                                          stackTrace,
+                                        ) {
+                                          // Silently fall back to initials if
+                                          // the stored image URL is broken/missing.
+                                          return Center(
+                                            child: Text(
+                                              user.name
+                                                  .substring(0, 1)
+                                                  .toUpperCase(),
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 48,
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      )
+                                      : Center(
+                                        child: Text(
+                                          user.name
+                                              .substring(0, 1)
+                                              .toUpperCase(),
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 48,
+                                          ),
                                         ),
-                                      ),
-                                    );
-                                  },
-                                )
-                              : Center(
-                                  child: Text(
-                                    user.name.substring(0, 1).toUpperCase(),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 48,
-                                    ),
-                                  ),
-                                )),
+                                      ))),
                     ),
                     if (_isEditing)
                       Positioned(
@@ -321,26 +385,31 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     Row(
                       children: [
                         OutlinedButton(
-                          onPressed: () => setState(() {
-                            _isEditing = false;
-                            _selectedImage = null;
-                            _nameController.text = user.name;
-                            _ageController.text = user.age?.toString() ?? '';
-                            _addressController.text = user.address ?? '';
-                            _bioController.text = user.bio ?? '';
-                          }),
+                          onPressed:
+                              () => setState(() {
+                                _isEditing = false;
+                                _selectedImageBytes = null;
+                                _nameController.text = user.name;
+                                _ageController.text =
+                                    user.age?.toString() ?? '';
+                                _addressController.text = user.address ?? '';
+                                _bioController.text = user.bio ?? '';
+                              }),
                           child: const Text('Cancel'),
                         ),
                         const SizedBox(width: 12),
                         ElevatedButton.icon(
                           onPressed: _isLoading ? null : _saveProfile,
-                          icon: _isLoading
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Icons.save),
+                          icon:
+                              _isLoading
+                                  ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                  : const Icon(Icons.save),
                           label: const Text('Save'),
                         ),
                       ],
@@ -374,7 +443,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         controller: _ageController,
                         enabled: _isEditing,
                         keyboardType: TextInputType.number,
-                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
                         decoration: const InputDecoration(
                           labelText: 'Age',
                           prefixIcon: Icon(Icons.calendar_today_outlined),
@@ -420,7 +491,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      _buildInfoRow('Member since', _formatDate(user.createdAt)),
+                      _buildInfoRow(
+                        'Member since',
+                        _formatDate(user.createdAt),
+                      ),
                     ],
                   ),
                 ),
@@ -441,22 +515,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-            
-            // Clear Data Button
-            SizedBox(
-              width: double.infinity,
-              child: TextButton.icon(
-                onPressed: _clearAllData,
-                style: TextButton.styleFrom(foregroundColor: Colors.red),
-                icon: const Icon(Icons.delete_forever),
-                label: const Text('Clear All Data'),
+
+              // Clear Data Button
+              SizedBox(
+                width: double.infinity,
+                child: TextButton.icon(
+                  onPressed: _clearAllData,
+                  style: TextButton.styleFrom(foregroundColor: Colors.red),
+                  icon: const Icon(Icons.delete_forever),
+                  label: const Text('Clear All Data'),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
   }
 
   Widget _buildInfoRow(String label, String value) {
@@ -465,14 +539,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: TextStyle(color: Colors.grey.shade600),
-          ),
-          Text(
-            value,
-            style: const TextStyle(fontWeight: FontWeight.w500),
-          ),
+          Text(label, style: TextStyle(color: Colors.grey.shade600)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w500)),
         ],
       ),
     );

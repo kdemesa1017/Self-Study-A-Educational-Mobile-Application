@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/quiz_provider.dart';
 import '../../models/question_model.dart';
+import '../../widgets/skeleton_loader.dart';
 
 class FlashcardStudyScreen extends ConsumerStatefulWidget {
   final String quizId;
@@ -12,7 +13,8 @@ class FlashcardStudyScreen extends ConsumerStatefulWidget {
   const FlashcardStudyScreen({super.key, required this.quizId});
 
   @override
-  ConsumerState<FlashcardStudyScreen> createState() => _FlashcardStudyScreenState();
+  ConsumerState<FlashcardStudyScreen> createState() =>
+      _FlashcardStudyScreenState();
 }
 
 class _FlashcardStudyScreenState extends ConsumerState<FlashcardStudyScreen> {
@@ -25,12 +27,15 @@ class _FlashcardStudyScreenState extends ConsumerState<FlashcardStudyScreen> {
   @override
   void initState() {
     super.initState();
-    _loadQuestions();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadQuestions());
   }
 
   Future<void> _loadQuestions() async {
-    final user = ref.read(currentUserProvider);
-    if (user == null) return;
+    final user = ref.read(currentUserProvider).valueOrNull;
+    if (user == null) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
 
     final (_, questions) = await ref
         .read(userQuizzesProvider(user.id).notifier)
@@ -38,7 +43,7 @@ class _FlashcardStudyScreenState extends ConsumerState<FlashcardStudyScreen> {
 
     // Filter only flashcards or use all questions as flashcards
     final flashcards = questions.where((q) => q.isFlashcard).toList();
-    
+
     if (mounted) {
       setState(() {
         _questions = flashcards.isNotEmpty ? flashcards : questions;
@@ -73,68 +78,67 @@ class _FlashcardStudyScreenState extends ConsumerState<FlashcardStudyScreen> {
     final total = _questions.length;
     final known = _knownCount;
     final unknown = _unknownCount;
-    
+
     // Update stats
-    final user = ref.read(currentUserProvider);
+    final user = ref.read(currentUserProvider).valueOrNull;
     if (user != null) {
-      await ref.read(userQuizzesProvider(user.id).notifier).updateQuizStats(
-        widget.quizId,
-        known,
-        total,
-      );
+      await ref
+          .read(userQuizzesProvider(user.id).notifier)
+          .updateQuizStats(widget.quizId, known, total);
     }
 
     if (mounted) {
       await showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          title: const Text('Study Session Complete!'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.celebration,
-                size: 64,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'You reviewed $total cards',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+        builder:
+            (context) => AlertDialog(
+              title: const Text('Study Session Complete!'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  _buildResultChip(Colors.green, 'Known: $known'),
-                  const SizedBox(width: 8),
-                  _buildResultChip(Colors.red, 'Unknown: $unknown'),
+                  Icon(
+                    Icons.celebration,
+                    size: 64,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'You reviewed $total cards',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _buildResultChip(Colors.green, 'Known: $known'),
+                      const SizedBox(width: 8),
+                      _buildResultChip(Colors.red, 'Unknown: $unknown'),
+                    ],
+                  ),
                 ],
               ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                context.go('/study');
-              },
-              child: const Text('Done'),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    context.go('/study');
+                  },
+                  child: const Text('Done'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    setState(() {
+                      _currentIndex = 0;
+                      _knownCount = 0;
+                      _unknownCount = 0;
+                    });
+                  },
+                  child: const Text('Study Again'),
+                ),
+              ],
             ),
-            FilledButton(
-              onPressed: () {
-                Navigator.pop(context);
-                setState(() {
-                  _currentIndex = 0;
-                  _knownCount = 0;
-                  _unknownCount = 0;
-                });
-              },
-              child: const Text('Study Again'),
-            ),
-          ],
-        ),
       );
     }
   }
@@ -148,10 +152,7 @@ class _FlashcardStudyScreenState extends ConsumerState<FlashcardStudyScreen> {
       ),
       child: Text(
         label,
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.bold,
-        ),
+        style: TextStyle(color: color, fontWeight: FontWeight.bold),
       ),
     );
   }
@@ -161,7 +162,7 @@ class _FlashcardStudyScreenState extends ConsumerState<FlashcardStudyScreen> {
     if (_isLoading) {
       return const Scaffold(
         resizeToAvoidBottomInset: false,
-        body: Center(child: CircularProgressIndicator()),
+        body: PageSkeleton(),
       );
     }
 
@@ -173,11 +174,7 @@ class _FlashcardStudyScreenState extends ConsumerState<FlashcardStudyScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                Icons.flip,
-                size: 64,
-                color: Colors.grey.shade400,
-              ),
+              Icon(Icons.flip, size: 64, color: Colors.grey.shade400),
               const SizedBox(height: 16),
               Text(
                 'No flashcards available',
@@ -221,7 +218,7 @@ class _FlashcardStudyScreenState extends ConsumerState<FlashcardStudyScreen> {
             backgroundColor: Colors.grey.shade200,
             minHeight: 4,
           ),
-          
+
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(24),
@@ -259,9 +256,11 @@ class _FlashcardStudyScreenState extends ConsumerState<FlashcardStudyScreen> {
                       back: _buildCardSide(
                         context,
                         title: 'Answer',
-                        content: currentQuestion.isFlashcard
-                            ? currentQuestion.flashcardBack!
-                            : currentQuestion.options[currentQuestion.correctAnswerIndex],
+                        content:
+                            currentQuestion.isFlashcard
+                                ? currentQuestion.flashcardBack!
+                                : currentQuestion.options[currentQuestion
+                                    .correctAnswerIndex],
                         hint: 'Tap to flip back',
                       ),
                     ),
@@ -326,10 +325,7 @@ class _FlashcardStudyScreenState extends ConsumerState<FlashcardStudyScreen> {
           const SizedBox(width: 4),
           Text(
             label,
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.bold,
-            ),
+            style: TextStyle(color: color, fontWeight: FontWeight.bold),
           ),
         ],
       ),
