@@ -118,7 +118,7 @@ class _OfflineModeDialogState extends State<OfflineModeDialog>
                     // Animated WiFi-off icon
                     AnimatedBuilder(
                       animation: _pulse,
-                      builder: (_, __) => Transform.scale(
+                      builder: (_, _) => Transform.scale(
                         scale: _pulse.value,
                         child: Container(
                           width: 88,

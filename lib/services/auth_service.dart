@@ -178,14 +178,40 @@ class AuthService {
         'lastSyncedAt': nowIso,
       };
 
-      await _firestore
-          .collection('users')
-          .doc(userId)
-          .set(updates, SetOptions(merge: true))
-          .timeout(
-            const Duration(seconds: 10),
-            onTimeout: () => throw 'Connection timed out. Please check your internet connection or disable your ad blocker (e.g. Brave Shield, uBlock Origin) if it is blocking Firebase.',
-          );
+      try {
+        await _firestore
+            .collection('users')
+            .doc(userId)
+            .set(updates, SetOptions(merge: true))
+            .timeout(
+              const Duration(seconds: 10),
+              onTimeout: () => throw 'Connection timed out.',
+            );
+      } catch (firestoreError) {
+        // If Firestore write fails (e.g. permission-denied during auto-login or offline),
+        // try to fetch existing doc or fall back to constructing updated model locally.
+        try {
+          final doc = await _firestore.collection('users').doc(userId).get();
+          if (doc.exists && doc.data() != null) {
+            final merged = Map<String, dynamic>.from(doc.data()!);
+            merged.addAll(updates);
+            return UserModel.fromFirestore(merged);
+          }
+        } catch (_) {}
+
+        // Construct local updated UserModel fallback
+        final fbUser = _auth.currentUser;
+        return UserModel(
+          id: userId,
+          email: fbUser?.email ?? '',
+          name: name ?? fbUser?.displayName ?? 'Student',
+          age: age,
+          address: address,
+          bio: bio,
+          profileImageBase64: profileImageBase64,
+          createdAt: DateTime.now(),
+        );
+      }
 
       // Read back the full user document. If it doesn't exist or is missing
       // required fields (from older accounts), create a minimal base doc.

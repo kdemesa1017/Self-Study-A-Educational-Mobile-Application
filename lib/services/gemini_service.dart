@@ -27,6 +27,7 @@ class GeneratedQuestion {
   final int correctAnswerIndex;
   final bool isFlashcard;
   final String? flashcardBack;
+  final String questionType; // 'mcq', 'flashcard', 'identification', 'enumeration'
 
   GeneratedQuestion({
     required this.questionText,
@@ -34,22 +35,11 @@ class GeneratedQuestion {
     required this.correctAnswerIndex,
     required this.isFlashcard,
     this.flashcardBack,
+    this.questionType = 'mcq',
   });
 }
 
 class GeminiService {
-  late final GenerativeModel _model;
-
-  GeminiService() {
-    _model = GenerativeModel(
-      model: AppConfig.geminiModel,
-      apiKey: AppConfig.geminiApiKey,
-      generationConfig: GenerationConfig(
-        responseMimeType: 'application/json',
-        temperature: 0.4,
-      ),
-    );
-  }
 
   // ── Public API ───────────────────────────────────────────────────────────────
 
@@ -64,6 +54,8 @@ class GeminiService {
         return utf8.decode(bytes, allowMalformed: true);
       case 'docx':
         return _extractDocxText(bytes);
+      case 'pptx':
+        return _extractPptxText(bytes);
       case 'pdf':
         // PDFs are sent as inline bytes directly to Gemini — return null here.
         return null;
@@ -74,14 +66,26 @@ class GeminiService {
 
   /// Generate a quiz from [fileBytes].
   /// [fileName] is used to determine MIME type.
-  /// [questionCount] controls how many questions to ask for (default 10).
+  /// [questionCount] controls how many questions to ask for (up to 50).
+  /// [difficulty] controls question complexity ('Easy', 'Medium', 'High', 'Extreme').
+  /// [customInstruction] custom prompt / chatbox instructions from user.
   Future<GeneratedQuizResult> generateQuiz({
     required Uint8List fileBytes,
     required String fileName,
     int questionCount = 10,
+    String difficulty = 'Medium',
+    List<String>? selectedTypes,
+    String? customInstruction,
   }) async {
+    final apiKey = AppConfig.geminiApiKey.trim();
+    if (apiKey.isEmpty || apiKey == 'YOUR_GEMINI_API_KEY') {
+      throw Exception(
+        'Missing Gemini API Key! Please add your API Key in lib/config/app_config.dart',
+      );
+    }
+
     final ext = fileName.split('.').last.toLowerCase();
-    final prompt = _buildPrompt(questionCount);
+    final prompt = _buildPrompt(questionCount, difficulty, selectedTypes, customInstruction);
 
     List<Part> parts;
 
@@ -92,7 +96,7 @@ class GeminiService {
         TextPart(prompt),
       ];
     } else {
-      // For TXT / DOCX extract text first.
+      // For TXT / DOCX / PPTX extract text first.
       final text = await extractText(fileBytes, ext);
       if (text == null || text.trim().isEmpty) {
         throw Exception(
@@ -103,7 +107,48 @@ class GeminiService {
       parts = [TextPart('$prompt\n\nDOCUMENT CONTENT:\n$text')];
     }
 
-    final response = await _model.generateContent([Content.multi(parts)]);
+    final modelsToTry = [
+      AppConfig.geminiModel,
+      'gemini-flash-latest',
+      'gemini-pro-latest',
+      'gemini-2.0-flash',
+    ];
+
+    Object? lastError;
+    GenerateContentResponse? response;
+
+    for (final modelName in modelsToTry) {
+      try {
+        final model = GenerativeModel(
+          model: modelName,
+          apiKey: apiKey,
+          generationConfig: GenerationConfig(
+            responseMimeType: 'application/json',
+            temperature: 0.4,
+          ),
+        );
+        final res = await model.generateContent([Content.multi(parts)]);
+        if (res.text != null && res.text!.isNotEmpty) {
+          response = res;
+          break;
+        }
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
+    if (response == null || response.text == null || response.text!.isEmpty) {
+      final errStr = lastError.toString();
+      if (errStr.contains('invalid authentication credentials') || apiKey.startsWith('AQ.')) {
+        throw Exception(
+          'Invalid API Key Type! The key starting with "${apiKey.substring(0, apiKey.length > 5 ? 5 : apiKey.length)}" is a Cloud OAuth token.\n\n'
+          'Please get a free Google AI Studio API Key (starts with "AIzaSy...") at:\n'
+          'https://aistudio.google.com/app/apikey',
+        );
+      }
+      throw lastError ?? Exception('Gemini returned an empty response. Please try again.');
+    }
+
     final raw = response.text;
     if (raw == null || raw.isEmpty) {
       throw Exception('Gemini returned an empty response. Please try again.');
@@ -114,15 +159,85 @@ class GeminiService {
 
   // ── Private helpers ──────────────────────────────────────────────────────────
 
-  String _buildPrompt(int count) => '''
-You are an expert educational quiz generator.
-Analyse the provided document and create $count questions.
-Use roughly 70% multiple-choice and 30% flashcard questions.
+  String _buildPrompt(int count, String difficulty, List<String>? selectedTypes, String? customInstruction) {
+    String difficultyRules;
 
-Return ONLY valid JSON matching this exact schema — no markdown, no explanation:
+    switch (difficulty.toLowerCase()) {
+      case 'easy':
+        difficultyRules = '''
+DIFFICULTY LEVEL: EASY
+- Generate simple, direct factual questions directly based on key facts in the document.
+- Example: "What country has high corruption?" -> Answer: "Philippines"
+''';
+        break;
+      case 'high':
+      case 'hard':
+        difficultyRules = '''
+DIFFICULTY LEVEL: HIGH
+- Generate scenario and example-based questions, but DO NOT provide obvious explanations or hints in the question itself.
+- Example: "John sends a suspicious link to Mike." -> Question asks what type of hacking John did (Phishing).
+''';
+        break;
+      case 'extreme':
+        difficultyRules = '''
+DIFFICULTY LEVEL: EXTREME
+- Generate fill-in-the-blank style questions using "_____" in the question text.
+- Example: "DDOS can _____ your database." -> Answer: "Spam"
+''';
+        break;
+      case 'medium':
+      default:
+        difficultyRules = '''
+DIFFICULTY LEVEL: MEDIUM
+- Generate scenario and example-based questions with clear context.
+- Example: "John sends a suspicious link to Mike. What type of hacking did John do?" -> Answer: "Phishing"
+''';
+        break;
+    }
+
+    String instructionSection = '';
+    if (customInstruction != null && customInstruction.trim().isNotEmpty) {
+      instructionSection = '''
+USER CHATBOX INSTRUCTIONS:
+"${customInstruction.trim()}"
+Follow the above instructions carefully when generating questions.
+''';
+    }
+
+    // Build allowed types section
+    final allowedTypes = (selectedTypes != null && selectedTypes.isNotEmpty)
+        ? selectedTypes
+        : ['mcq', 'flashcard', 'identification', 'enumeration'];
+    final typeDescriptions = {
+      'mcq': '"mcq": Multiple choice (4 choices, 1 correct index)',
+      'flashcard': '"flashcard": Memory flipcard (question + back answer)',
+      'identification': '"identification": Short keyword answer (user types)',
+      'enumeration': '"enumeration": List of key terms (comma-separated)',
+    };
+    final allowedTypeBlock = allowedTypes
+        .map((t) => '   - ${typeDescriptions[t] ?? t}')
+        .join('\n');
+
+    return '''
+You are an expert educational quiz generator.
+Analyse the provided document and generate questions based on it.
+
+STRICT MANDATORY RULES:
+1. QUANTITY RULE: You MUST generate EXACTLY $count questions in total. Do NOT generate less than $count or more than $count. The array "questions" MUST contain exactly $count items.
+2. QUESTION TYPES TO INCLUDE — use ONLY these types:
+$allowedTypeBlock
+
+IMPORTANT ANSWER FORMAT RULE FOR IDENTIFICATION & ENUMERATION:
+Answers for "identification" and "enumeration" MUST be short keywords, names, or key phrases (1 to 4 words max). NEVER require a full sentence answer.
+
+$difficultyRules
+
+$instructionSection
+
+Return ONLY valid JSON matching this exact schema — no markdown, no conversational explanation outside JSON:
 
 {
-  "quiz_title": "<concise title derived from the content>",
+  "quiz_title": "<concise title>",
   "quiz_description": "<one-sentence description>",
   "quiz_category": "<subject area>",
   "questions": [
@@ -130,16 +245,26 @@ Return ONLY valid JSON matching this exact schema — no markdown, no explanatio
       "type": "mcq",
       "question": "...",
       "options": ["Option A", "Option B", "Option C", "Option D"],
-      "correct_answer_index": 0,
-      "explanation": "..."
+      "correct_answer_index": 0
     },
     {
       "type": "flashcard",
       "question": "...",
       "answer": "..."
+    },
+    {
+      "type": "identification",
+      "question": "...",
+      "answer": "<short keyword/term>"
+    },
+    {
+      "type": "enumeration",
+      "question": "...",
+      "items": ["Item 1", "Item 2"]
     }
   ]
 }''';
+  }
 
   GeneratedQuizResult _parseResponse(String raw) {
     // Strip any accidental markdown fences.
@@ -154,24 +279,52 @@ Return ONLY valid JSON matching this exact schema — no markdown, no explanatio
     final rawQuestions = (json['questions'] as List<dynamic>);
     final questions = rawQuestions.map((q) {
       final map = q as Map<String, dynamic>;
-      final type = map['type'] as String? ?? 'mcq';
+      final type = (map['type'] as String?)?.toLowerCase() ?? 'mcq';
+
       if (type == 'flashcard') {
+        final ans = (map['answer'] as String?) ?? '';
         return GeneratedQuestion(
-          questionText: map['question'] as String,
-          options: [map['answer'] as String],
+          questionText: (map['question'] as String?) ?? '',
+          options: [ans],
           correctAnswerIndex: 0,
           isFlashcard: true,
-          flashcardBack: map['answer'] as String,
+          flashcardBack: ans,
+          questionType: 'flashcard',
+        );
+      } else if (type == 'identification') {
+        final ans = (map['answer'] as String?) ?? '';
+        return GeneratedQuestion(
+          questionText: (map['question'] as String?) ?? '',
+          options: [ans],
+          correctAnswerIndex: 0,
+          isFlashcard: false,
+          flashcardBack: ans,
+          questionType: 'identification',
+        );
+      } else if (type == 'enumeration') {
+        final rawItems = map['items'] as List<dynamic>?;
+        final items = rawItems != null
+            ? rawItems.map((e) => e.toString()).toList()
+            : [(map['answer'] as String?) ?? ''];
+        return GeneratedQuestion(
+          questionText: (map['question'] as String?) ?? '',
+          options: items,
+          correctAnswerIndex: 0,
+          isFlashcard: false,
+          flashcardBack: items.join(', '),
+          questionType: 'enumeration',
         );
       } else {
-        final opts = (map['options'] as List<dynamic>)
-            .map((o) => o.toString())
-            .toList();
+        final opts = (map['options'] as List<dynamic>?)
+                ?.map((o) => o.toString())
+                .toList() ??
+            ['Option A', 'Option B', 'Option C', 'Option D'];
         return GeneratedQuestion(
-          questionText: map['question'] as String,
+          questionText: (map['question'] as String?) ?? '',
           options: opts,
           correctAnswerIndex: (map['correct_answer_index'] as int?) ?? 0,
           isFlashcard: false,
+          questionType: 'mcq',
         );
       }
     }).toList();
@@ -199,6 +352,43 @@ Return ONLY valid JSON matching this exact schema — no markdown, no explanatio
     }
   }
 
+  /// Extract plain text from a PPTX file (also a ZIP of XML files).
+  /// Each slide lives under ppt/slides/slideN.xml, with visible text
+  /// wrapped in `<a:t>` tags. Slides are read in order and separated so
+  /// the AI can still tell where one slide ends and the next begins.
+  static String _extractPptxText(Uint8List bytes) {
+    try {
+      final archive = ZipDecoder().decodeBytes(bytes);
+
+      final slideFiles = archive.files
+          .where((f) =>
+              f.isFile &&
+              RegExp(r'^ppt/slides/slide\d+\.xml$').hasMatch(f.name))
+          .toList();
+
+      // Sort numerically (slide2 before slide10, etc.) instead of
+      // alphabetically.
+      slideFiles.sort((a, b) {
+        final na = int.parse(RegExp(r'\d+').firstMatch(a.name)!.group(0)!);
+        final nb = int.parse(RegExp(r'\d+').firstMatch(b.name)!.group(0)!);
+        return na.compareTo(nb);
+      });
+
+      final buffer = StringBuffer();
+      for (var i = 0; i < slideFiles.length; i++) {
+        final xml = utf8.decode(slideFiles[i].content as List<int>);
+        final matches = RegExp(r'<a:t[^>]*>(.*?)</a:t>').allMatches(xml);
+        final slideText = matches.map((m) => m.group(1) ?? '').join(' ');
+        if (slideText.trim().isNotEmpty) {
+          buffer.writeln('Slide ${i + 1}: $slideText');
+        }
+      }
+      return buffer.toString();
+    } catch (_) {
+      return '';
+    }
+  }
+
   /// Convert a [GeneratedQuizResult] into domain models ready to save.
   static (QuizModel, List<QuestionModel>) toModels(
     GeneratedQuizResult result,
@@ -217,6 +407,7 @@ Return ONLY valid JSON matching this exact schema — no markdown, no explanatio
         correctAnswerIndex: q.correctAnswerIndex,
         isFlashcard: q.isFlashcard,
         flashcardBack: q.flashcardBack,
+        questionType: q.questionType,
         createdAt: now,
       );
     }).toList();

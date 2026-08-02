@@ -6,7 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../providers/auth_provider.dart';
 
 class RegisterScreen extends ConsumerStatefulWidget {
-  const RegisterScreen({Key? key}) : super(key: key);
+  const RegisterScreen({super.key});
 
   @override
   ConsumerState<RegisterScreen> createState() => _RegisterScreenState();
@@ -287,15 +287,15 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         child: Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.6),
+            color: Colors.white.withValues(alpha: 0.6),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: Colors.white.withOpacity(0.8),
+              color: Colors.white.withValues(alpha: 0.8),
               width: 1.5,
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.05),
+                color: Colors.black.withValues(alpha: 0.05),
                 blurRadius: 20,
                 spreadRadius: -5,
               ),
@@ -327,6 +327,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             TextFormField(
               controller: _nameController,
               maxLength: 60,
+              style: const TextStyle(
+                color: Color(0xFF1A202C),
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
               decoration: _inputDecoration('Full Name', Icons.person),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
@@ -339,6 +344,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             TextFormField(
               controller: _ageController,
               keyboardType: TextInputType.number,
+              style: const TextStyle(
+                color: Color(0xFF1A202C),
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               decoration: _inputDecoration('Age (Optional)', Icons.cake),
               validator: (value) {
@@ -355,18 +365,36 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             TextFormField(
               controller: _schoolController,
               maxLength: 80,
+              style: const TextStyle(
+                color: Color(0xFF1A202C),
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
               decoration: _inputDecoration(
                   'School/Institution (Optional)', Icons.school),
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              value: _selectedGrade,
+              initialValue: _selectedGrade,
+              style: const TextStyle(
+                color: Color(0xFF1A202C),
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+              dropdownColor: Colors.white,
               decoration:
                   _inputDecoration('Grade/Year Level (Optional)', Icons.book),
               items: _gradeLevels.map((grade) {
                 return DropdownMenuItem(
                   value: grade,
-                  child: Text(grade),
+                  child: Text(
+                    grade,
+                    style: const TextStyle(
+                      color: Color(0xFF1A202C),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 );
               }).toList(),
               onChanged: (value) {
@@ -407,6 +435,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             TextFormField(
               controller: _emailController,
               keyboardType: TextInputType.emailAddress,
+              style: const TextStyle(
+                color: Color(0xFF1A202C),
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
               decoration: _inputDecoration('Email', Icons.email),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
@@ -423,6 +456,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             TextFormField(
               controller: _passwordController,
               obscureText: true,
+              style: const TextStyle(
+                color: Color(0xFF1A202C),
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
               decoration: _inputDecoration('Password', Icons.lock),
               onChanged: _checkPasswordStrength,
               validator: (value) {
@@ -441,6 +479,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             TextFormField(
               controller: _confirmPasswordController,
               obscureText: true,
+              style: const TextStyle(
+                color: Color(0xFF1A202C),
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
               decoration: _inputDecoration('Confirm Password', Icons.lock_outline),
               validator: (value) {
                 if (value == null || value.isEmpty) {
@@ -550,16 +593,29 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   InputDecoration _inputDecoration(String label, IconData icon) {
     return InputDecoration(
       labelText: label,
+      labelStyle: const TextStyle(
+        color: Color(0xFF4A5568),
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+      ),
+      floatingLabelStyle: const TextStyle(
+        color: Color(0xFF6C63FF),
+        fontWeight: FontWeight.bold,
+      ),
+      hintStyle: const TextStyle(
+        color: Color(0xFF718096),
+        fontSize: 14,
+      ),
       prefixIcon: Icon(icon, color: const Color(0xFF6C63FF)),
       filled: true,
-      fillColor: Colors.white.withOpacity(0.9),
+      fillColor: Colors.white,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none,
+        borderSide: const BorderSide(color: Color(0xFFCBD5E0)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.grey.shade200),
+        borderSide: const BorderSide(color: Color(0xFFCBD5E0), width: 1.5),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),

@@ -6,21 +6,25 @@ class ConnectivityService {
   final Connectivity _connectivity = Connectivity();
 
   /// Emits [true] when online, [false] when offline.
-  Stream<bool> get onlineStream => _connectivity.onConnectivityChanged.map(
-    (results) => _isOnline(results),
-  );
+  /// Emits the initial status immediately upon subscription.
+  Stream<bool> get onlineStream async* {
+    yield await isOnline;
+    await for (final results in _connectivity.onConnectivityChanged) {
+      yield _isOnline(results);
+    }
+  }
 
   Future<bool> get isOnline async {
-    final results = await _connectivity.checkConnectivity();
-    return _isOnline(results);
+    try {
+      final results = await _connectivity.checkConnectivity();
+      return _isOnline(results);
+    } catch (_) {
+      return true;
+    }
   }
 
   static bool _isOnline(List<ConnectivityResult> results) {
-    return results.any(
-      (r) =>
-          r == ConnectivityResult.mobile ||
-          r == ConnectivityResult.wifi ||
-          r == ConnectivityResult.ethernet,
-    );
+    if (results.isEmpty) return true;
+    return !results.contains(ConnectivityResult.none);
   }
 }

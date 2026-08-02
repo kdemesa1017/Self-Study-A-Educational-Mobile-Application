@@ -222,6 +222,7 @@ class QuizNotifier extends StateNotifier<AsyncValue<List<QuizModel>>> {
     required int correctAnswerIndex,
     bool isFlashcard = false,
     String? flashcardBack,
+    String questionType = 'mcq',
   }) async {
     final question = QuestionModel(
       id: _uuid.v4(),
@@ -231,6 +232,7 @@ class QuizNotifier extends StateNotifier<AsyncValue<List<QuizModel>>> {
       correctAnswerIndex: correctAnswerIndex,
       isFlashcard: isFlashcard,
       flashcardBack: flashcardBack,
+      questionType: questionType,
       createdAt: DateTime.now(),
     );
 
@@ -283,6 +285,7 @@ class QuizNotifier extends StateNotifier<AsyncValue<List<QuizModel>>> {
     int? correctAnswerIndex,
     bool? isFlashcard,
     String? flashcardBack,
+    String? questionType,
   }) async {
     QuestionModel? existing;
     final quizzes = await _localStore.loadQuizzes(_userId);
@@ -304,6 +307,7 @@ class QuizNotifier extends StateNotifier<AsyncValue<List<QuizModel>>> {
       correctAnswerIndex: correctAnswerIndex ?? existing.correctAnswerIndex,
       isFlashcard: isFlashcard ?? existing.isFlashcard,
       flashcardBack: flashcardBack ?? existing.flashcardBack,
+      questionType: questionType ?? existing.questionType,
     );
 
     await _localStore.upsertQuestion(updated);
@@ -317,6 +321,7 @@ class QuizNotifier extends StateNotifier<AsyncValue<List<QuizModel>>> {
         if (correctAnswerIndex != null) 'correctAnswerIndex': correctAnswerIndex,
         if (isFlashcard != null) 'isFlashcard': isFlashcard,
         if (flashcardBack != null) 'flashcardBack': flashcardBack,
+        if (questionType != null) 'questionType': questionType,
       },
     );
     await _emitLocalQuizzes();

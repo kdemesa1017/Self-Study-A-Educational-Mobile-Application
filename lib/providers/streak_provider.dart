@@ -37,8 +37,7 @@ class StreakNotifier extends AsyncNotifier<int> {
     final newCount = _calcStreak(user.lastStreakDate, user.streakCount, today);
 
     // Check connectivity.
-    final onlineAsync = ref.read(isOnlineProvider);
-    final isOnline = onlineAsync.valueOrNull ?? false;
+    final isOnline = await ref.read(connectivityServiceProvider).isOnline;
 
     if (isOnline) {
       await _syncToFirestore(user.id, newCount, today, store);

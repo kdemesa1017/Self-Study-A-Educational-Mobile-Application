@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -25,10 +26,31 @@ class _QuizStudyScreenState extends ConsumerState<QuizStudyScreen> {
   bool _hasAnswered = false;
   List<int> _userAnswers = [];
 
+  // For Identification questions
+  final TextEditingController _textInputController = TextEditingController();
+  bool? _isTextAnswerCorrect;
+
+  // For Enumeration questions — one controller per expected answer item
+  List<TextEditingController> _enumControllers = [];
+  List<bool> _enumCorrectness = [];
+
+  // Auto advance timer
+  Timer? _autoAdvanceTimer;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadQuestions());
+  }
+
+  @override
+  void dispose() {
+    _autoAdvanceTimer?.cancel();
+    _textInputController.dispose();
+    for (final c in _enumControllers) {
+      c.dispose();
+    }
+    super.dispose();
   }
 
   Future<void> _loadQuestions() async {
@@ -45,13 +67,33 @@ class _QuizStudyScreenState extends ConsumerState<QuizStudyScreen> {
     // Filter out flashcards for quiz mode
     final quizQuestions = questions.where((q) => !q.isFlashcard).toList();
 
+    // Pre-build enum controllers for the first question
+    final firstQ = quizQuestions.isNotEmpty ? quizQuestions.first : null;
+    final initialEnumControllers =
+        (firstQ != null && firstQ.isEnumeration)
+            ? List.generate(
+                firstQ.options.length,
+                (_) => TextEditingController(),
+              )
+            : <TextEditingController>[];
+
     if (mounted) {
       setState(() {
         _questions = quizQuestions;
         _shuffledQuestions = [...quizQuestions]..shuffle();
+        _enumControllers = initialEnumControllers;
         _isLoading = false;
       });
     }
+  }
+
+  void _startAutoAdvanceTimer() {
+    _autoAdvanceTimer?.cancel();
+    _autoAdvanceTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted && _hasAnswered) {
+        _nextQuestion();
+      }
+    });
   }
 
   void _selectAnswer(int index) {
@@ -67,14 +109,87 @@ class _QuizStudyScreenState extends ConsumerState<QuizStudyScreen> {
         _score++;
       }
     });
+
+    _startAutoAdvanceTimer();
+  }
+
+  void _submitTextAnswer() {
+    if (_hasAnswered) return;
+    final currentQuestion = _shuffledQuestions[_currentIndex];
+
+    bool isCorrect = false;
+
+    if (currentQuestion.isIdentification) {
+      final userText = _textInputController.text.trim();
+      if (userText.isEmpty) return;
+      final expected =
+          (currentQuestion.flashcardBack ??
+                  currentQuestion.options.firstOrNull ??
+                  '')
+              .trim();
+      final normUser =
+          userText.toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '').trim();
+      final normExpected =
+          expected.toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '').trim();
+      isCorrect = normUser == normExpected || normExpected.contains(normUser);
+    } else if (currentQuestion.isEnumeration) {
+      final expectedItems = currentQuestion.options;
+      // Per-field evaluation
+      final correctness = <bool>[];
+      int matches = 0;
+      for (var i = 0; i < expectedItems.length; i++) {
+        final userVal =
+            i < _enumControllers.length
+                ? _enumControllers[i].text.trim().toLowerCase()
+                : '';
+        final normExp =
+            expectedItems[i].trim().toLowerCase().replaceAll(
+              RegExp(r'[^\w\s]'),
+              '',
+            );
+        final normUser = userVal.replaceAll(RegExp(r'[^\w\s]'), '').trim();
+        final match =
+            normUser.isNotEmpty &&
+            (normUser == normExp || normExp.contains(normUser));
+        correctness.add(match);
+        if (match) matches++;
+      }
+      _enumCorrectness = correctness;
+      isCorrect =
+          matches > 0 && matches >= (expectedItems.length / 2).ceil();
+    }
+
+    setState(() {
+      _hasAnswered = true;
+      _isTextAnswerCorrect = isCorrect;
+      if (isCorrect) _score++;
+    });
+
+    _startAutoAdvanceTimer();
   }
 
   void _nextQuestion() {
+    _autoAdvanceTimer?.cancel();
     if (_currentIndex < _shuffledQuestions.length - 1) {
+      // Rebuild enum controllers for the upcoming question
+      final nextQuestion = _shuffledQuestions[_currentIndex + 1];
+      final newControllers = nextQuestion.isEnumeration
+          ? List.generate(
+              nextQuestion.options.length,
+              (_) => TextEditingController(),
+            )
+          : <TextEditingController>[];
+
       setState(() {
         _currentIndex++;
         _selectedAnswer = null;
         _hasAnswered = false;
+        _isTextAnswerCorrect = null;
+        _textInputController.clear();
+        // Dispose old enum controllers, replace with new
+        for (final c in _enumControllers) c.dispose();
+        _enumControllers = newControllers;
+        _enumCorrectness = [];
       });
     } else {
       _showResults();
@@ -82,8 +197,9 @@ class _QuizStudyScreenState extends ConsumerState<QuizStudyScreen> {
   }
 
   Future<void> _showResults() async {
+    _autoAdvanceTimer?.cancel();
     final total = _shuffledQuestions.length;
-    final percentage = (_score / total * 100).round();
+    final percentage = total > 0 ? (_score / total * 100).round() : 0;
 
     // Update quiz stats
     final user = ref.read(currentUserProvider).valueOrNull;
@@ -176,12 +292,28 @@ class _QuizStudyScreenState extends ConsumerState<QuizStudyScreen> {
   }
 
   void _restartQuiz() {
+    _autoAdvanceTimer?.cancel();
+    // Rebuild enum controllers for the first question
+    final firstQuestion = _shuffledQuestions.isNotEmpty
+        ? _shuffledQuestions[0]
+        : null;
+    final newControllers = (firstQuestion != null && firstQuestion.isEnumeration)
+        ? List.generate(
+            firstQuestion.options.length,
+            (_) => TextEditingController(),
+          )
+        : <TextEditingController>[];
     setState(() {
       _currentIndex = 0;
       _score = 0;
       _selectedAnswer = null;
       _hasAnswered = false;
+      _isTextAnswerCorrect = null;
       _userAnswers = [];
+      _textInputController.clear();
+      for (final c in _enumControllers) c.dispose();
+      _enumControllers = newControllers;
+      _enumCorrectness = [];
       _shuffledQuestions.shuffle();
     });
   }
@@ -211,7 +343,7 @@ class _QuizStudyScreenState extends ConsumerState<QuizStudyScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Add multiple-choice questions to this quiz',
+                'Add multiple-choice, identification, or enumeration questions to this quiz',
                 style: Theme.of(
                   context,
                 ).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade600),
@@ -261,9 +393,9 @@ class _QuizStudyScreenState extends ConsumerState<QuizStudyScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Score
+                  // Score & Question Type Badge
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -273,7 +405,7 @@ class _QuizStudyScreenState extends ConsumerState<QuizStudyScreen> {
                         decoration: BoxDecoration(
                           color: Theme.of(
                             context,
-                          ).colorScheme.primaryContainer.withOpacity(0.3),
+                          ).colorScheme.primaryContainer.withValues(alpha: 0.3),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Row(
@@ -295,11 +427,33 @@ class _QuizStudyScreenState extends ConsumerState<QuizStudyScreen> {
                           ],
                         ),
                       ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.indigo.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          currentQuestion.isIdentification
+                              ? 'Identification'
+                              : currentQuestion.isEnumeration
+                                  ? 'Enumeration'
+                                  : 'Multiple Choice',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.indigo,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 24),
 
-                  // Question
+                  // Question Card
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(24),
@@ -321,23 +475,37 @@ class _QuizStudyScreenState extends ConsumerState<QuizStudyScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 24),
 
-                  // Options
-                  ...currentQuestion.options.asMap().entries.map((entry) {
-                    final index = entry.key;
-                    final option = entry.value;
-                    return _buildOptionCard(
-                      index,
-                      option,
-                      currentQuestion.correctAnswerIndex,
-                    );
-                  }),
+                  // Options or Text Input based on Question Type
+                  if (currentQuestion.isIdentification || currentQuestion.isEnumeration)
+                    _buildTextAnswerInput(currentQuestion)
+                  else
+                    ...currentQuestion.options.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      final option = entry.value;
+                      return _buildOptionCard(
+                        index,
+                        option,
+                        currentQuestion.correctAnswerIndex,
+                      );
+                    }),
 
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 24),
 
-                  // Next Button
-                  if (_hasAnswered)
+                  // Auto advance notice & Next Button
+                  if (_hasAnswered) ...[
+                    Center(
+                      child: Text(
+                        'Moving to next question in 3s...',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontStyle: FontStyle.italic,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
@@ -359,6 +527,7 @@ class _QuizStudyScreenState extends ConsumerState<QuizStudyScreen> {
                         ),
                       ),
                     ),
+                  ],
                 ],
               ),
             ),
@@ -368,31 +537,267 @@ class _QuizStudyScreenState extends ConsumerState<QuizStudyScreen> {
     );
   }
 
+  Widget _buildTextAnswerInput(QuestionModel question) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
+    // ── Identification ───────────────────────────────────────────────────────
+    if (question.isIdentification) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Type your answer (short key term/keyword only):',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _textInputController,
+            enabled: !_hasAnswered,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
+            decoration: InputDecoration(
+              hintText: 'e.g., Phishing',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (!_hasAnswered)
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _submitTextAnswer,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: const Text(
+                  'Submit Answer',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          if (_hasAnswered) ...[
+            const SizedBox(height: 12),
+            _buildAnswerFeedback(
+              isDarkMode: isDarkMode,
+              isCorrect: _isTextAnswerCorrect ?? false,
+              expectedLabel:
+                  'Expected: ${question.flashcardBack ?? question.options.firstOrNull ?? ''}',
+            ),
+          ],
+        ],
+      );
+    }
+
+    // ── Enumeration ──────────────────────────────────────────────────────────
+    // Show one TextField per expected answer item
+    final expectedItems = question.options;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Fill in each item (${expectedItems.length} answer${expectedItems.length > 1 ? 's' : ''} required):',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 12),
+        ...List.generate(expectedItems.length, (i) {
+          // After answering, colour each field border based on correctness
+          Color borderColor = Colors.grey.shade400;
+          if (_hasAnswered && i < _enumCorrectness.length) {
+            borderColor = _enumCorrectness[i] ? Colors.green : Colors.red;
+          }
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: TextField(
+              controller:
+                  i < _enumControllers.length ? _enumControllers[i] : null,
+              enabled: !_hasAnswered,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+              decoration: InputDecoration(
+                labelText: 'Item ${i + 1}',
+                hintText: 'e.g., ${expectedItems[i]}',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: borderColor),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: borderColor, width: 1.5),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(
+                    color: Theme.of(context).colorScheme.primary,
+                    width: 2,
+                  ),
+                ),
+                suffixIcon: _hasAnswered && i < _enumCorrectness.length
+                    ? Icon(
+                        _enumCorrectness[i]
+                            ? Icons.check_circle
+                            : Icons.cancel,
+                        color:
+                            _enumCorrectness[i] ? Colors.green : Colors.red,
+                      )
+                    : null,
+              ),
+            ),
+          );
+        }),
+        const SizedBox(height: 8),
+        if (!_hasAnswered)
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _submitTextAnswer,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              child: const Text(
+                'Submit Answers',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+        if (_hasAnswered) ...[
+          const SizedBox(height: 12),
+          _buildAnswerFeedback(
+            isDarkMode: isDarkMode,
+            isCorrect: _isTextAnswerCorrect ?? false,
+            expectedLabel:
+                'Expected answers: ${expectedItems.join(', ')}',
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildAnswerFeedback({
+    required bool isDarkMode,
+    required bool isCorrect,
+    required String expectedLabel,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isCorrect
+            ? (isDarkMode
+                ? Colors.green.shade900.withValues(alpha: 0.4)
+                : Colors.green.shade50)
+            : (isDarkMode
+                ? Colors.red.shade900.withValues(alpha: 0.4)
+                : Colors.red.shade50),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isCorrect ? Colors.green : Colors.red,
+          width: 2,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isCorrect ? Icons.check_circle : Icons.cancel,
+                color: isCorrect ? Colors.green : Colors.red,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                isCorrect ? 'Correct Answer!' : 'Incorrect Answer',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: isCorrect ? Colors.green : Colors.red,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            expectedLabel,
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: isDarkMode ? Colors.white70 : Colors.black87,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+
   Widget _buildOptionCard(int index, String option, int correctIndex) {
     final isSelected = _selectedAnswer == index;
     final isCorrect = index == correctIndex;
     final showCorrect = _hasAnswered && isCorrect;
     final showWrong = _hasAnswered && isSelected && !isCorrect;
 
-    Color backgroundColor = Colors.white;
-    Color borderColor = Colors.grey.shade200;
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
+    Color backgroundColor;
+    Color borderColor;
+    Color textColor;
     IconData? trailingIcon;
     Color? iconColor;
 
     if (showCorrect) {
-      backgroundColor = Colors.green.shade50;
-      borderColor = Colors.green;
+      backgroundColor =
+          isDarkMode
+              ? Colors.green.shade900.withValues(alpha: 0.4)
+              : Colors.green.shade50;
+      borderColor = isDarkMode ? Colors.green.shade400 : Colors.green;
+      textColor = isDarkMode ? Colors.green.shade100 : Colors.green.shade900;
       trailingIcon = Icons.check_circle;
-      iconColor = Colors.green;
+      iconColor = isDarkMode ? Colors.green.shade300 : Colors.green;
     } else if (showWrong) {
-      backgroundColor = Colors.red.shade50;
-      borderColor = Colors.red;
+      backgroundColor =
+          isDarkMode
+              ? Colors.red.shade900.withValues(alpha: 0.4)
+              : Colors.red.shade50;
+      borderColor = isDarkMode ? Colors.red.shade400 : Colors.red;
+      textColor = isDarkMode ? Colors.red.shade100 : Colors.red.shade900;
       trailingIcon = Icons.cancel;
-      iconColor = Colors.red;
+      iconColor = isDarkMode ? Colors.red.shade300 : Colors.red;
     } else if (isSelected) {
       backgroundColor = Theme.of(context).colorScheme.primaryContainer;
       borderColor = Theme.of(context).colorScheme.primary;
+      textColor = Theme.of(context).colorScheme.onPrimaryContainer;
+    } else {
+      backgroundColor = Theme.of(context).colorScheme.surface;
+      borderColor = isDarkMode ? Colors.grey.shade700 : Colors.grey.shade300;
+      textColor = Theme.of(context).colorScheme.onSurface;
     }
+
+    final badgeColor =
+        isSelected || showCorrect || showWrong
+            ? (showCorrect
+                ? (isDarkMode ? Colors.green.shade600 : Colors.green)
+                : showWrong
+                ? (isDarkMode ? Colors.red.shade600 : Colors.red)
+                : Theme.of(context).colorScheme.primary)
+            : (isDarkMode ? Colors.grey.shade800 : Colors.grey.shade200);
+
+    final badgeTextColor =
+        isSelected || showCorrect || showWrong
+            ? Colors.white
+            : (isDarkMode ? Colors.grey.shade200 : Colors.grey.shade700);
 
     return GestureDetector(
       onTap: () => _selectAnswer(index),
@@ -410,24 +815,14 @@ class _QuizStudyScreenState extends ConsumerState<QuizStudyScreen> {
               width: 32,
               height: 32,
               decoration: BoxDecoration(
-                color:
-                    isSelected || showCorrect || showWrong
-                        ? (showCorrect
-                            ? Colors.green
-                            : showWrong
-                            ? Colors.red
-                            : Theme.of(context).colorScheme.primary)
-                        : Colors.grey.shade200,
+                color: badgeColor,
                 shape: BoxShape.circle,
               ),
               child: Center(
                 child: Text(
                   String.fromCharCode(65 + index),
                   style: TextStyle(
-                    color:
-                        isSelected || showCorrect || showWrong
-                            ? Colors.white
-                            : Colors.grey.shade700,
+                    color: badgeTextColor,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -438,6 +833,7 @@ class _QuizStudyScreenState extends ConsumerState<QuizStudyScreen> {
               child: Text(
                 option,
                 style: TextStyle(
+                  color: textColor,
                   fontSize: 16,
                   fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                 ),

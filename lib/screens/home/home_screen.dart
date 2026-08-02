@@ -388,7 +388,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: recentQuizzes.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
                 itemBuilder: (context, index) {
                   final quiz = recentQuizzes[index];
                   return _buildQuizCard(context, quiz);

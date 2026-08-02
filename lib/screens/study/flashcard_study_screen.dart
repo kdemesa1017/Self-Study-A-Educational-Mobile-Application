@@ -19,10 +19,22 @@ class FlashcardStudyScreen extends ConsumerStatefulWidget {
 
 class _FlashcardStudyScreenState extends ConsumerState<FlashcardStudyScreen> {
   bool _isLoading = true;
+
+  // The set currently being reviewed this round. On the first round this is
+  // the same as _allFlashcards; on subsequent "Study Again" rounds this is
+  // only the cards the user marked "Still Learning" last time.
   List<QuestionModel> _questions = [];
+
   int _currentIndex = 0;
   int _knownCount = 0;
   int _unknownCount = 0;
+
+  // Cards the user marked "Still Learning" during the current round.
+  final List<QuestionModel> _unknownThisRound = [];
+
+  // Incremented every time a new study session starts so that FlipCard
+  // always rebuilds from the front (Question) side.
+  int _sessionKey = 0;
 
   @override
   void initState() {
@@ -43,10 +55,11 @@ class _FlashcardStudyScreenState extends ConsumerState<FlashcardStudyScreen> {
 
     // Filter only flashcards or use all questions as flashcards
     final flashcards = questions.where((q) => q.isFlashcard).toList();
+    final workingSet = flashcards.isNotEmpty ? flashcards : questions;
 
     if (mounted) {
       setState(() {
-        _questions = flashcards.isNotEmpty ? flashcards : questions;
+        _questions = List.of(workingSet);
         _isLoading = false;
       });
     }
@@ -55,29 +68,31 @@ class _FlashcardStudyScreenState extends ConsumerState<FlashcardStudyScreen> {
   void _markKnown() {
     setState(() {
       _knownCount++;
-      if (_currentIndex < _questions.length - 1) {
-        _currentIndex++;
-      } else {
-        _showCompletionDialog();
-      }
+      _advance();
     });
   }
 
   void _markUnknown() {
     setState(() {
       _unknownCount++;
-      if (_currentIndex < _questions.length - 1) {
-        _currentIndex++;
-      } else {
-        _showCompletionDialog();
-      }
+      _unknownThisRound.add(_questions[_currentIndex]);
+      _advance();
     });
+  }
+
+  void _advance() {
+    if (_currentIndex < _questions.length - 1) {
+      _currentIndex++;
+    } else {
+      _showCompletionDialog();
+    }
   }
 
   Future<void> _showCompletionDialog() async {
     final total = _questions.length;
     final known = _knownCount;
     final unknown = _unknownCount;
+    final remainingUnknown = List<QuestionModel>.from(_unknownThisRound);
 
     // Update stats
     final user = ref.read(currentUserProvider).valueOrNull;
@@ -116,6 +131,17 @@ class _FlashcardStudyScreenState extends ConsumerState<FlashcardStudyScreen> {
                       _buildResultChip(Colors.red, 'Unknown: $unknown'),
                     ],
                   ),
+                  if (remainingUnknown.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      '"Study Again" will only show the $unknown card(s) '
+                      'you\'re still learning.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
                 ],
               ),
               actions: [
@@ -127,19 +153,33 @@ class _FlashcardStudyScreenState extends ConsumerState<FlashcardStudyScreen> {
                   child: const Text('Done'),
                 ),
                 FilledButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    setState(() {
-                      _currentIndex = 0;
-                      _knownCount = 0;
-                      _unknownCount = 0;
-                    });
-                  },
+                  onPressed: remainingUnknown.isEmpty
+                      ? null
+                      : () {
+                          Navigator.pop(context);
+                          setState(() {
+                            // Only the cards marked "Still Learning" carry
+                            // over into the next round.
+                            _questions = remainingUnknown;
+                            _unknownThisRound.clear();
+                            _currentIndex = 0;
+                            _knownCount = 0;
+                            _unknownCount = 0;
+                            // Bump session key so every FlipCard is rebuilt
+                            // fresh, starting on the Question (front) side.
+                            _sessionKey++;
+                          });
+                        },
                   child: const Text('Study Again'),
                 ),
               ],
             ),
       );
+
+      // If there was nothing left to review (perfect round), just leave.
+      if (remainingUnknown.isEmpty && mounted) {
+        context.go('/study');
+      }
     }
   }
 
@@ -147,7 +187,7 @@ class _FlashcardStudyScreenState extends ConsumerState<FlashcardStudyScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
@@ -244,8 +284,11 @@ class _FlashcardStudyScreenState extends ConsumerState<FlashcardStudyScreen> {
                   const SizedBox(height: 32),
 
                   // Flashcard
+                  // ValueKey changes when card index OR session changes,
+                  // forcing a fresh rebuild always starting on front (Question).
                   Expanded(
                     child: FlipCard(
+                      key: ValueKey('card_${_sessionKey}_$_currentIndex'),
                       direction: FlipDirection.HORIZONTAL,
                       front: _buildCardSide(
                         context,
@@ -256,11 +299,7 @@ class _FlashcardStudyScreenState extends ConsumerState<FlashcardStudyScreen> {
                       back: _buildCardSide(
                         context,
                         title: 'Answer',
-                        content:
-                            currentQuestion.isFlashcard
-                                ? currentQuestion.flashcardBack!
-                                : currentQuestion.options[currentQuestion
-                                    .correctAnswerIndex],
+                        content: currentQuestion.displayAnswer,
                         hint: 'Tap to flip back',
                       ),
                     ),
@@ -315,7 +354,7 @@ class _FlashcardStudyScreenState extends ConsumerState<FlashcardStudyScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
@@ -352,7 +391,7 @@ class _FlashcardStudyScreenState extends ConsumerState<FlashcardStudyScreen> {
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.2),
+            color: Colors.black.withValues(alpha: 0.2),
             blurRadius: 20,
             offset: const Offset(0, 10),
           ),
@@ -364,7 +403,7 @@ class _FlashcardStudyScreenState extends ConsumerState<FlashcardStudyScreen> {
           Text(
             title,
             style: TextStyle(
-              color: Colors.white.withOpacity(0.8),
+              color: Colors.white.withValues(alpha: 0.8),
               fontSize: 16,
               fontWeight: FontWeight.w500,
             ),
@@ -386,7 +425,7 @@ class _FlashcardStudyScreenState extends ConsumerState<FlashcardStudyScreen> {
           Text(
             hint,
             style: TextStyle(
-              color: Colors.white.withOpacity(0.6),
+              color: Colors.white.withValues(alpha: 0.6),
               fontSize: 14,
             ),
           ),

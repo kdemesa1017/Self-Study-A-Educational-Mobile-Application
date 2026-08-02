@@ -6,6 +6,7 @@ class QuestionModel {
   final int correctAnswerIndex;
   final bool isFlashcard;
   final String? flashcardBack;
+  final String questionType; // 'mcq', 'flashcard', 'identification', 'enumeration'
   final DateTime createdAt;
 
   QuestionModel({
@@ -16,8 +17,51 @@ class QuestionModel {
     required this.correctAnswerIndex,
     this.isFlashcard = false,
     this.flashcardBack,
+    this.questionType = 'mcq',
     required this.createdAt,
   });
+
+  bool get isIdentification => questionType == 'identification';
+  bool get isEnumeration => questionType == 'enumeration';
+  bool get isMultipleChoice =>
+      questionType == 'mcq' ||
+      (!isFlashcard && !isIdentification && !isEnumeration);
+
+  /// Returns the formatted answer string suitable for displaying on a flashcard or answer key.
+  String get displayAnswer {
+    if (isEnumeration) {
+      if (options.length > 1) {
+        return options.map((e) => '• ${e.trim()}').join('\n');
+      } else if (options.length == 1 && options.first.contains(',')) {
+        return options.first
+            .split(',')
+            .map((e) => '• ${e.trim()}')
+            .where((e) => e.length > 2)
+            .join('\n');
+      } else if (flashcardBack != null && flashcardBack!.trim().isNotEmpty) {
+        if (flashcardBack!.contains(',')) {
+          return flashcardBack!
+              .split(',')
+              .map((e) => '• ${e.trim()}')
+              .where((e) => e.length > 2)
+              .join('\n');
+        }
+        return flashcardBack!.trim();
+      } else if (options.isNotEmpty) {
+        return options.first.trim();
+      }
+    }
+    if (flashcardBack != null && flashcardBack!.trim().isNotEmpty) {
+      return flashcardBack!.trim();
+    }
+    if (options.isNotEmpty) {
+      if (correctAnswerIndex >= 0 && correctAnswerIndex < options.length) {
+        return options[correctAnswerIndex].trim();
+      }
+      return options.map((e) => '• ${e.trim()}').join('\n');
+    }
+    return '';
+  }
 
   Map<String, dynamic> toFirestore() {
     return {
@@ -28,19 +72,25 @@ class QuestionModel {
       'correctAnswerIndex': correctAnswerIndex,
       'isFlashcard': isFlashcard,
       'flashcardBack': flashcardBack,
+      'questionType': questionType,
       'createdAt': createdAt.toIso8601String(),
     };
   }
 
   factory QuestionModel.fromFirestore(Map<String, dynamic> data) {
+    final rawIsFlashcard = data['isFlashcard'] as bool? ?? false;
+    final rawType =
+        data['questionType'] as String? ??
+        (rawIsFlashcard ? 'flashcard' : 'mcq');
     return QuestionModel(
       id: data['id'] as String,
       quizId: data['quizId'] as String,
       questionText: data['questionText'] as String,
-      options: List<String>.from(data['options'] as List),
-      correctAnswerIndex: data['correctAnswerIndex'] as int,
-      isFlashcard: data['isFlashcard'] as bool? ?? false,
+      options: List<String>.from(data['options'] as List? ?? []),
+      correctAnswerIndex: data['correctAnswerIndex'] as int? ?? 0,
+      isFlashcard: rawIsFlashcard || rawType == 'flashcard',
       flashcardBack: data['flashcardBack'] as String?,
+      questionType: rawType,
       createdAt: DateTime.parse(data['createdAt'] as String),
     );
   }
@@ -53,6 +103,7 @@ class QuestionModel {
     int? correctAnswerIndex,
     bool? isFlashcard,
     String? flashcardBack,
+    String? questionType,
     DateTime? createdAt,
   }) {
     return QuestionModel(
@@ -63,6 +114,7 @@ class QuestionModel {
       correctAnswerIndex: correctAnswerIndex ?? this.correctAnswerIndex,
       isFlashcard: isFlashcard ?? this.isFlashcard,
       flashcardBack: flashcardBack ?? this.flashcardBack,
+      questionType: questionType ?? this.questionType,
       createdAt: createdAt ?? this.createdAt,
     );
   }

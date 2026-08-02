@@ -28,7 +28,7 @@ class LocalUserStore {
   Future<bool> hasActiveSession() async {
     final activeUserId = await getActiveUserId();
     if (activeUserId == null) return false;
-    return read(activeUserId) != null;
+    return (await read(activeUserId)) != null;
   }
 
   Future<UserModel?> readActiveUser() async {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'providers/auth_provider.dart';
+import 'providers/theme_provider.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/register_screen.dart';
 import 'screens/home/home_screen.dart';
@@ -15,15 +16,40 @@ import 'screens/profile/profile_screen.dart';
 import 'screens/main_layout.dart';
 import 'screens/ai_quiz/ai_quiz_generator_screen.dart';
 
+class RouterNotifier extends ChangeNotifier {
+  final Ref _ref;
+
+  RouterNotifier(this._ref) {
+    _ref.listen<AsyncValue<dynamic>>(
+      currentUserProvider,
+      (previous, next) {
+        final prevUser = previous?.valueOrNull;
+        final nextUser = next.valueOrNull;
+        final prevIsLoggedIn = prevUser != null;
+        final nextIsLoggedIn = nextUser != null;
+
+        if (prevIsLoggedIn != nextIsLoggedIn || previous?.isLoading != next.isLoading) {
+          notifyListeners();
+        }
+      },
+    );
+  }
+}
+
+final routerNotifierProvider = Provider<RouterNotifier>((ref) {
+  return RouterNotifier(ref);
+});
+
 final routerProvider = Provider<GoRouter>((ref) {
-  // Watch the async user state — AsyncLoading means auth hasn't resolved yet.
-  final currentUserAsync = ref.watch(currentUserProvider);
+  final notifier = ref.watch(routerNotifierProvider);
 
   return GoRouter(
     initialLocation: '/',
+    refreshListenable: notifier,
     redirect: (context, state) {
       // While auth is still initialising, don't redirect at all.
       // Cached session may already be loaded; avoid a flash to /login.
+      final currentUserAsync = ref.read(currentUserProvider);
       if (currentUserAsync.isLoading) return null;
 
       final isLoggedIn = currentUserAsync.valueOrNull != null;
@@ -104,10 +130,12 @@ class SelfStudyApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
+    final themeMode = ref.watch(themeModeProvider);
 
     return MaterialApp.router(
       title: 'Self Study',
       debugShowCheckedModeBanner: false,
+      themeMode: themeMode,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF6366F1),

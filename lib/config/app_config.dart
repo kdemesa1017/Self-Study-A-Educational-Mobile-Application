@@ -4,14 +4,11 @@ class AppConfig {
   AppConfig._();
 
   /// Google Gemini API key (free tier).
-  /// Get yours at: https://aistudio.google.com/app/apikey
-  /// The key must start with 'AIza...' — do NOT use OAuth tokens.
-  static const String geminiApiKey = "YOUR_GEMINI_API_KEY";
+  static const String geminiApiKey = "GEMINI_API_KEY";
 
-  /// gemini-1.5-flash — fast, free tier, great for document analysis.
-  static const String geminiModel = 'gemini-1.5-flash';
+  /// Primary model for AI quiz generation.
+  static const String geminiModel = 'gemini-flash-latest';
 
   /// Maximum file size the AI generator will accept (20 MB).
   static const int maxUploadBytes = 20 * 1024 * 1024;
 }
-

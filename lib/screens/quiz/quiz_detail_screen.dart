@@ -81,6 +81,7 @@ class _EditQuizBottomSheetState extends ConsumerState<_EditQuizBottomSheet> {
 
     if (!mounted) return;
     Navigator.pop(context);
+    await Future.delayed(const Duration(milliseconds: 250));
     widget.onSaved();
   }
 
@@ -176,15 +177,17 @@ class _EditQuestionBottomSheetState
   late final TextEditingController _questionController;
   late final TextEditingController _backController;
   late final List<TextEditingController> _optionControllers;
+  // For enumeration — dynamic list of items
+  late final List<TextEditingController> _enumControllers;
 
-  bool _isFlashcard = false;
+  late String _questionType; // 'mcq', 'flashcard', 'identification', 'enumeration'
   int _correctAnswerIndex = 0;
   bool _isSaving = false;
 
   @override
   void initState() {
     super.initState();
-    _isFlashcard = widget.question.isFlashcard;
+    _questionType = widget.question.questionType;
     _correctAnswerIndex = widget.question.correctAnswerIndex;
 
     _questionController = TextEditingController(
@@ -201,15 +204,26 @@ class _EditQuestionBottomSheetState
         text: i < initialOptions.length ? initialOptions[i] : '',
       ),
     );
+
+    // Pre-fill enum controllers from existing options when editing an enumeration
+    if (_questionType == 'enumeration') {
+      _enumControllers = List.generate(
+        initialOptions.isNotEmpty ? initialOptions.length : 3,
+        (i) => TextEditingController(
+          text: i < initialOptions.length ? initialOptions[i] : '',
+        ),
+      );
+    } else {
+      _enumControllers = List.generate(3, (_) => TextEditingController());
+    }
   }
 
   @override
   void dispose() {
     _questionController.dispose();
     _backController.dispose();
-    for (final c in _optionControllers) {
-      c.dispose();
-    }
+    for (final c in _optionControllers) c.dispose();
+    for (final c in _enumControllers) c.dispose();
     super.dispose();
   }
 
@@ -223,10 +237,30 @@ class _EditQuestionBottomSheetState
       return;
     }
 
-    final options =
-        _isFlashcard
-            ? [_backController.text.trim()]
-            : _optionControllers.map((c) => c.text.trim()).toList();
+    List<String> options;
+    String? flashcardBack;
+    bool isFlashcard = _questionType == 'flashcard';
+
+    switch (_questionType) {
+      case 'flashcard':
+        options = [_backController.text.trim()];
+        flashcardBack = _backController.text.trim();
+        break;
+      case 'identification':
+        options = [_backController.text.trim()];
+        flashcardBack = _backController.text.trim();
+        break;
+      case 'enumeration':
+        options = _enumControllers
+            .map((c) => c.text.trim())
+            .where((t) => t.isNotEmpty)
+            .toList();
+        flashcardBack = options.join(', ');
+        break;
+      default: // mcq
+        options = _optionControllers.map((c) => c.text.trim()).toList();
+        flashcardBack = null;
+    }
 
     await ref
         .read(userQuizzesProvider(user.id).notifier)
@@ -234,13 +268,15 @@ class _EditQuestionBottomSheetState
           questionId: widget.question.id,
           questionText: _questionController.text.trim(),
           options: options,
-          correctAnswerIndex: _isFlashcard ? 0 : _correctAnswerIndex,
-          isFlashcard: _isFlashcard,
-          flashcardBack: _isFlashcard ? _backController.text.trim() : null,
+          correctAnswerIndex: _questionType == 'mcq' ? _correctAnswerIndex : 0,
+          isFlashcard: isFlashcard,
+          flashcardBack: flashcardBack,
+          questionType: _questionType,
         );
 
     if (!mounted) return;
     Navigator.pop(context);
+    await Future.delayed(const Duration(milliseconds: 250));
     widget.onSaved();
   }
 
@@ -255,118 +291,183 @@ class _EditQuestionBottomSheetState
       ),
       child: Form(
         key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Edit Question',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            ChoiceChip(
-              label: const Text('Flashcard Mode'),
-              selected: _isFlashcard,
-              onSelected: (selected) {
-                setState(() {
-                  _isFlashcard = selected;
-                  if (_isFlashcard) {
-                    _correctAnswerIndex = 0;
-                  }
-                });
-              },
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _questionController,
-              decoration: const InputDecoration(labelText: 'Question *'),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Please enter a question';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 12),
-            if (_isFlashcard)
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Edit Question',
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              // Type Selector
+              _buildTypePicker(),
+              const SizedBox(height: 16),
               TextFormField(
-                controller: _backController,
-                decoration: const InputDecoration(
-                  labelText: 'Answer (Back of card) *',
-                ),
+                controller: _questionController,
+                maxLines: 2,
+                decoration: const InputDecoration(labelText: 'Question *'),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
-                    return 'Please enter the answer';
+                    return 'Please enter a question';
                   }
                   return null;
                 },
-              )
-            else
-              Column(
-                children: [
-                  ..._optionControllers.asMap().entries.map((entry) {
-                    final index = entry.key;
-                    final controller = entry.value;
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Row(
-                        children: [
-                          Radio<int>(
-                            value: index,
-                            groupValue: _correctAnswerIndex,
-                            onChanged: (value) {
-                              if (value == null) return;
-                              setState(() => _correctAnswerIndex = value);
-                            },
-                          ),
-                          Expanded(
-                            child: TextFormField(
-                              controller: controller,
-                              decoration: InputDecoration(
-                                labelText: 'Option ${index + 1} *',
-                              ),
-                              validator: (value) {
-                                if (value == null || value.trim().isEmpty) {
-                                  return 'Please enter this option';
-                                }
-                                return null;
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
-                ],
               ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _isSaving ? null : _save,
-                child:
-                    _isSaving
-                        ? const SizedBox(
+              const SizedBox(height: 12),
+              _buildAnswerFields(),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _isSaving ? null : _save,
+                  child: _isSaving
+                      ? const SizedBox(
                           width: 20,
                           height: 20,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                        : const Text('Save Changes'),
+                      : const Text('Save Changes'),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  Widget _buildTypePicker() {
+    const types = [
+      ('mcq', 'MCQ', Icons.list_alt_rounded),
+      ('flashcard', 'Flashcard', Icons.flip_rounded),
+      ('identification', 'Identification', Icons.edit_note_rounded),
+      ('enumeration', 'Enumeration', Icons.format_list_numbered_rounded),
+    ];
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: types.map((t) {
+          final isSelected = _questionType == t.$1;
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              avatar: Icon(t.$3, size: 16),
+              label: Text(t.$2),
+              selected: isSelected,
+              onSelected: (_) => setState(() {
+                _questionType = t.$1;
+                _correctAnswerIndex = 0;
+              }),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildAnswerFields() {
+    switch (_questionType) {
+      case 'flashcard':
+        return TextFormField(
+          controller: _backController,
+          decoration: const InputDecoration(labelText: 'Answer (Back of card) *'),
+          validator: (v) => (v == null || v.trim().isEmpty) ? 'Please enter the answer' : null,
+        );
+      case 'identification':
+        return TextFormField(
+          controller: _backController,
+          decoration: const InputDecoration(
+            labelText: 'Answer (short keyword) *',
+            hintText: 'e.g., Phishing',
+          ),
+          validator: (v) => (v == null || v.trim().isEmpty) ? 'Please enter the answer' : null,
+        );
+      case 'enumeration':
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Answer Items',
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
+            const SizedBox(height: 8),
+            ...List.generate(_enumControllers.length, (i) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _enumControllers[i],
+                      decoration: InputDecoration(labelText: 'Item ${i + 1} *'),
+                      validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter item' : null,
+                    ),
+                  ),
+                  if (_enumControllers.length > 1)
+                    IconButton(
+                      icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
+                      onPressed: () => setState(() {
+                        _enumControllers.removeAt(i);
+                      }),
+                    ),
+                ],
+              ),
+            )),
+            TextButton.icon(
+              onPressed: () => setState(() {
+                _enumControllers.add(TextEditingController());
+              }),
+              icon: const Icon(Icons.add),
+              label: const Text('Add Item'),
+            ),
+          ],
+        );
+      default: // mcq
+        return RadioGroup<int>(
+          groupValue: _correctAnswerIndex,
+          onChanged: (value) {
+            if (value != null) setState(() => _correctAnswerIndex = value);
+          },
+          child: Column(
+            children: [
+              ..._optionControllers.asMap().entries.map((entry) {
+                final index = entry.key;
+                final controller = entry.value;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      Radio<int>(value: index),
+                      Expanded(
+                        child: TextFormField(
+                          controller: controller,
+                          decoration: InputDecoration(labelText: 'Option ${index + 1} *'),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Please enter this option';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ),
+        );
+    }
   }
 }
 
@@ -381,6 +482,99 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
     _loadQuiz();
   }
 
+  void _showResultModal(String title, String message, bool isSuccess) {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      useRootNavigator: true,
+      barrierDismissible: false,
+      builder:
+          (context) => Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors:
+                      isSuccess
+                          ? [Colors.green.shade50, Colors.white]
+                          : [Colors.red.shade50, Colors.white],
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        colors:
+                            isSuccess
+                                ? [Colors.green, Colors.green.shade600]
+                                : [Colors.red, Colors.red.shade600],
+                      ),
+                    ),
+                    child: Icon(
+                      isSuccess
+                          ? Icons.check_rounded
+                          : Icons.priority_high_rounded,
+                      size: 36,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color:
+                          isSuccess
+                              ? Colors.green.shade700
+                              : Colors.red.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isSuccess ? Colors.green : Colors.red,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        'OK',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+    );
+  }
+
   Future<void> _editQuiz() async {
     final user = ref.read(currentUserProvider).valueOrNull;
     if (user == null || _quiz == null) return;
@@ -390,7 +584,17 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
       context: context,
       isScrollControlled: true,
       builder:
-          (context) => _EditQuizBottomSheet(quiz: _quiz!, onSaved: _loadQuiz),
+          (context) => _EditQuizBottomSheet(
+            quiz: _quiz!,
+            onSaved: () {
+              _loadQuiz();
+              _showResultModal(
+                'Quiz Updated!',
+                'Quiz details have been updated successfully.',
+                true,
+              );
+            },
+          ),
     );
   }
 
@@ -403,8 +607,17 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
       context: context,
       isScrollControlled: true,
       builder:
-          (context) =>
-              _EditQuestionBottomSheet(question: question, onSaved: _loadQuiz),
+          (context) => _EditQuestionBottomSheet(
+            question: question,
+            onSaved: () {
+              _loadQuiz();
+              _showResultModal(
+                'Question Saved!',
+                'Question details updated successfully.',
+                true,
+              );
+            },
+          ),
     );
   }
 
@@ -565,8 +778,8 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          Colors.black.withOpacity(0.25),
-                          Colors.black.withOpacity(0.55),
+                          Colors.black.withValues(alpha: 0.25),
+                          Colors.black.withValues(alpha: 0.55),
                         ],
                       ),
                     ),
@@ -585,7 +798,7 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
                               vertical: 6,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.2),
+                              color: Colors.white.withValues(alpha: 0.2),
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: Text(
@@ -601,7 +814,7 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
                           Text(
                             _quiz!.description!,
                             style: TextStyle(
-                              color: Colors.white.withOpacity(0.9),
+                              color: Colors.white.withValues(alpha: 0.9),
                               fontSize: 14,
                             ),
                             maxLines: 2,
@@ -792,7 +1005,7 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
         decoration: BoxDecoration(
           color: Theme.of(
             context,
-          ).colorScheme.primaryContainer.withOpacity(0.3),
+          ).colorScheme.primaryContainer.withValues(alpha: 0.3),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
@@ -826,24 +1039,44 @@ class _QuizDetailScreenState extends ConsumerState<QuizDetailScreen> {
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),
-        subtitle:
-            question.isFlashcard
-                ? const Text('Flashcard')
-                : Text('${question.options.length} options'),
+        subtitle: Text(
+          question.isEnumeration
+              ? '${question.options.length} items to enumerate'
+              : question.isIdentification
+                  ? 'Identification'
+                  : question.isFlashcard
+                      ? 'Flashcard'
+                      : '${question.options.length} options',
+        ),
         leading: Container(
           width: 36,
           height: 36,
           decoration: BoxDecoration(
-            color:
-                question.isFlashcard
-                    ? Colors.orange.withOpacity(0.2)
-                    : Colors.blue.withOpacity(0.2),
+            color: question.isEnumeration
+                ? Colors.orange.withValues(alpha: 0.2)
+                : question.isIdentification
+                    ? Colors.teal.withValues(alpha: 0.2)
+                    : question.isFlashcard
+                        ? Colors.purple.withValues(alpha: 0.2)
+                        : Colors.blue.withValues(alpha: 0.2),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(
-            question.isFlashcard ? Icons.flip : Icons.help_outline,
+            question.isEnumeration
+                ? Icons.format_list_numbered_rounded
+                : question.isIdentification
+                    ? Icons.edit_note_rounded
+                    : question.isFlashcard
+                        ? Icons.flip
+                        : Icons.help_outline,
             size: 20,
-            color: question.isFlashcard ? Colors.orange : Colors.blue,
+            color: question.isEnumeration
+                ? Colors.orange
+                : question.isIdentification
+                    ? Colors.teal
+                    : question.isFlashcard
+                        ? Colors.purple
+                        : Colors.blue,
           ),
         ),
         trailing: IconButton(
@@ -923,7 +1156,13 @@ class _AddQuestionBottomSheetState
     TextEditingController(),
     TextEditingController(),
   ];
-  bool _isFlashcard = false;
+  // For enumeration items (dynamic list)
+  List<TextEditingController> _enumControllers = [
+    TextEditingController(),
+    TextEditingController(),
+    TextEditingController(),
+  ];
+  String _questionType = 'mcq'; // 'mcq', 'flashcard', 'identification', 'enumeration'
   int _correctAnswerIndex = 0;
   bool _isSaving = false;
 
@@ -931,9 +1170,8 @@ class _AddQuestionBottomSheetState
   void dispose() {
     _questionController.dispose();
     _backController.dispose();
-    for (var c in _optionControllers) {
-      c.dispose();
-    }
+    for (var c in _optionControllers) c.dispose();
+    for (var c in _enumControllers) c.dispose();
     super.dispose();
   }
 
@@ -944,18 +1182,41 @@ class _AddQuestionBottomSheetState
 
     final user = ref.read(currentUserProvider).valueOrNull;
     if (user != null) {
+      List<String> options;
+      String? flashcardBack;
+      bool isFlashcard = _questionType == 'flashcard';
+
+      switch (_questionType) {
+        case 'flashcard':
+          options = [_backController.text.trim()];
+          flashcardBack = _backController.text.trim();
+          break;
+        case 'identification':
+          options = [_backController.text.trim()];
+          flashcardBack = _backController.text.trim();
+          break;
+        case 'enumeration':
+          options = _enumControllers
+              .map((c) => c.text.trim())
+              .where((t) => t.isNotEmpty)
+              .toList();
+          flashcardBack = options.join(', ');
+          break;
+        default: // mcq
+          options = _optionControllers.map((c) => c.text).toList();
+          flashcardBack = null;
+      }
+
       await ref
           .read(userQuizzesProvider(user.id).notifier)
           .addQuestion(
             quizId: widget.quizId,
             questionText: _questionController.text.trim(),
-            options:
-                _isFlashcard
-                    ? [_backController.text.trim()]
-                    : _optionControllers.map((c) => c.text).toList(),
-            correctAnswerIndex: _isFlashcard ? 0 : _correctAnswerIndex,
-            isFlashcard: _isFlashcard,
-            flashcardBack: _isFlashcard ? _backController.text.trim() : null,
+            options: options,
+            correctAnswerIndex: _questionType == 'mcq' ? _correctAnswerIndex : 0,
+            isFlashcard: isFlashcard,
+            flashcardBack: flashcardBack,
+            questionType: _questionType,
           );
 
       if (mounted) {
@@ -964,7 +1225,7 @@ class _AddQuestionBottomSheetState
       }
     }
 
-    setState(() => _isSaving = false);
+    if (mounted) setState(() => _isSaving = false);
   }
 
   @override
@@ -977,120 +1238,196 @@ class _AddQuestionBottomSheetState
         padding: const EdgeInsets.all(24),
         child: Form(
           key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Add Question',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              ChoiceChip(
-                label: const Text('Flashcard Mode'),
-                selected: _isFlashcard,
-                onSelected: (selected) {
-                  setState(() => _isFlashcard = selected);
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _questionController,
-                decoration: const InputDecoration(
-                  labelText: 'Question',
-                  hintText: 'Enter your question',
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Add Question',
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
                 ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter a question';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              if (_isFlashcard)
+                const SizedBox(height: 16),
+                // Type Selector chips
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _typeChip('mcq', 'MCQ', Icons.list_alt_rounded),
+                      const SizedBox(width: 8),
+                      _typeChip('flashcard', 'Flashcard', Icons.flip_rounded),
+                      const SizedBox(width: 8),
+                      _typeChip('identification', 'Identification', Icons.edit_note_rounded),
+                      const SizedBox(width: 8),
+                      _typeChip('enumeration', 'Enumeration', Icons.format_list_numbered_rounded),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
                 TextFormField(
-                  controller: _backController,
+                  controller: _questionController,
+                  maxLines: 2,
                   decoration: const InputDecoration(
-                    labelText: 'Answer (Back of card)',
-                    hintText: 'Enter the answer',
+                    labelText: 'Question',
+                    hintText: 'Enter your question',
                   ),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
-                      return 'Please enter the answer';
+                      return 'Please enter a question';
                     }
                     return null;
                   },
-                )
-              else
-                Column(
-                  children: [
-                    ..._optionControllers.asMap().entries.map((entry) {
-                      final index = entry.key;
-                      final controller = entry.value;
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Row(
-                          children: [
-                            Radio<int>(
-                              value: index,
-                              groupValue: _correctAnswerIndex,
-                              onChanged: (value) {
-                                setState(() => _correctAnswerIndex = value!);
-                              },
-                            ),
-                            Expanded(
-                              child: TextFormField(
-                                controller: controller,
-                                decoration: InputDecoration(
-                                  labelText: 'Option ${index + 1}',
-                                  hintText:
-                                      index == 0
-                                          ? 'Correct answer'
-                                          : 'Wrong answer',
-                                ),
-                                validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Please enter this option';
-                                  }
-                                  return null;
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }),
-                  ],
                 ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isSaving ? null : _saveQuestion,
-                  child:
-                      _isSaving
-                          ? const SizedBox(
+                const SizedBox(height: 16),
+                _buildAnswerFields(),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _isSaving ? null : _saveQuestion,
+                    child: _isSaving
+                        ? const SizedBox(
                             width: 20,
                             height: 20,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                          : const Text('Add Question'),
+                        : const Text('Add Question'),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
+  }
+
+  Widget _typeChip(String type, String label, IconData icon) {
+    final isSelected = _questionType == type;
+    return ChoiceChip(
+      avatar: Icon(icon, size: 16),
+      label: Text(label),
+      selected: isSelected,
+      onSelected: (_) => setState(() {
+        _questionType = type;
+        _correctAnswerIndex = 0;
+      }),
+    );
+  }
+
+  Widget _buildAnswerFields() {
+    switch (_questionType) {
+      case 'flashcard':
+        return TextFormField(
+          controller: _backController,
+          decoration: const InputDecoration(
+            labelText: 'Answer (Back of card)',
+            hintText: 'Enter the answer',
+          ),
+          validator: (value) {
+            if (value == null || value.isEmpty) return 'Please enter the answer';
+            return null;
+          },
+        );
+      case 'identification':
+        return TextFormField(
+          controller: _backController,
+          decoration: const InputDecoration(
+            labelText: 'Answer (short keyword)',
+            hintText: 'e.g., Phishing',
+          ),
+          validator: (value) {
+            if (value == null || value.isEmpty) return 'Please enter the answer';
+            return null;
+          },
+        );
+      case 'enumeration':
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Answer Items',
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
+            const SizedBox(height: 8),
+            ...List.generate(_enumControllers.length, (i) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _enumControllers[i],
+                      decoration: InputDecoration(labelText: 'Item ${i + 1}'),
+                      validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter item' : null,
+                    ),
+                  ),
+                  if (_enumControllers.length > 1)
+                    IconButton(
+                      icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
+                      onPressed: () => setState(() {
+                        _enumControllers[i].dispose();
+                        _enumControllers.removeAt(i);
+                      }),
+                    ),
+                ],
+              ),
+            )),
+            TextButton.icon(
+              onPressed: () => setState(() {
+                _enumControllers.add(TextEditingController());
+              }),
+              icon: const Icon(Icons.add),
+              label: const Text('Add Item'),
+            ),
+          ],
+        );
+      default: // mcq
+        return RadioGroup<int>(
+          groupValue: _correctAnswerIndex,
+          onChanged: (value) {
+            if (value != null) setState(() => _correctAnswerIndex = value);
+          },
+          child: Column(
+            children: [
+              ..._optionControllers.asMap().entries.map((entry) {
+                final index = entry.key;
+                final controller = entry.value;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      Radio<int>(value: index),
+                      Expanded(
+                        child: TextFormField(
+                          controller: controller,
+                          decoration: InputDecoration(
+                            labelText: 'Option ${index + 1}',
+                            hintText: index == 0 ? 'Correct answer' : 'Wrong answer',
+                          ),
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Please enter this option';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ),
+        );
+    }
   }
 }

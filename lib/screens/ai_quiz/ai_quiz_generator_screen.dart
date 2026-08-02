@@ -11,7 +11,7 @@ import '../../providers/quiz_provider.dart';
 import '../../providers/connectivity_provider.dart';
 
 class AiQuizGeneratorScreen extends ConsumerStatefulWidget {
-  const AiQuizGeneratorScreen({Key? key}) : super(key: key);
+  const AiQuizGeneratorScreen({super.key});
 
   @override
   ConsumerState<AiQuizGeneratorScreen> createState() => _AiQuizGeneratorScreenState();
@@ -22,9 +22,14 @@ enum _GenerationState { initial, loading, success, error }
 class _AiQuizGeneratorScreenState extends ConsumerState<AiQuizGeneratorScreen> with SingleTickerProviderStateMixin {
   PlatformFile? _selectedFile;
   double _questionCount = 10;
+  String _difficulty = 'Medium';
+  final TextEditingController _instructionController = TextEditingController();
   _GenerationState _state = _GenerationState.initial;
   String _errorMessage = '';
   
+  // Question types to include in generation
+  final Set<String> _selectedTypes = {'mcq', 'flashcard', 'identification', 'enumeration'};
+
   late final AnimationController _animationController;
   
   // To hold generated quiz models
@@ -43,13 +48,14 @@ class _AiQuizGeneratorScreenState extends ConsumerState<AiQuizGeneratorScreen> w
   @override
   void dispose() {
     _animationController.dispose();
+    _instructionController.dispose();
     super.dispose();
   }
 
   Future<void> _pickFile() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['pdf', 'txt', 'docx'],
+      allowedExtensions: ['pdf', 'txt', 'docx', 'pptx', 'ppt'],
       withData: true,
     );
 
@@ -85,14 +91,16 @@ class _AiQuizGeneratorScreenState extends ConsumerState<AiQuizGeneratorScreen> w
   }
 
   Future<void> _generateQuiz() async {
-    final isOnline = ref.read(isOnlineProvider).valueOrNull ?? false;
+    final isOnline = await ref.read(connectivityServiceProvider).isOnline;
     if (!isOnline) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('AI generation requires internet connection'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('AI generation requires internet connection'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
       return;
     }
 
@@ -111,6 +119,11 @@ class _AiQuizGeneratorScreenState extends ConsumerState<AiQuizGeneratorScreen> w
         fileBytes: fileBytes,
         fileName: fileName,
         questionCount: count,
+        difficulty: _difficulty,
+        selectedTypes: _selectedTypes.toList(),
+        customInstruction: _instructionController.text.trim().isEmpty
+            ? null
+            : _instructionController.text.trim(),
       );
 
       final user = ref.read(currentUserProvider).valueOrNull;
@@ -153,6 +166,8 @@ class _AiQuizGeneratorScreenState extends ConsumerState<AiQuizGeneratorScreen> w
       case 'pdf': return Colors.redAccent;
       case 'txt': return Colors.blueAccent;
       case 'docx': return Colors.teal;
+      case 'pptx':
+      case 'ppt': return Colors.orangeAccent;
       default: return Colors.grey;
     }
   }
@@ -165,9 +180,9 @@ class _AiQuizGeneratorScreenState extends ConsumerState<AiQuizGeneratorScreen> w
         child: Container(
           padding: padding ?? const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.08),
+            color: Colors.white.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withOpacity(0.1)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
           ),
           child: child,
         ),
@@ -176,142 +191,324 @@ class _AiQuizGeneratorScreenState extends ConsumerState<AiQuizGeneratorScreen> w
   }
 
   Widget _buildInitialState() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _buildGlassCard(
-          child: Column(
-            children: [
-              if (_selectedFile == null) ...[
-                Icon(Icons.upload_file, size: 64, color: Colors.white.withOpacity(0.7)),
-                const SizedBox(height: 16),
-                const Text(
-                  'Upload a document',
-                  style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Supported formats: PDF, TXT, DOCX\nMax size: 20MB',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 14),
-                ),
-                const SizedBox(height: 24),
-                ElevatedButton.icon(
-                  onPressed: _pickFile,
-                  icon: const Icon(Icons.folder_open),
-                  label: const Text('Browse Files'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF6C63FF),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildGlassCard(
+            child: Column(
+              children: [
+                if (_selectedFile == null) ...[
+                  Icon(Icons.upload_file, size: 64, color: Colors.white.withValues(alpha: 0.7)),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Upload a document',
+                    style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
                   ),
-                ),
-              ] else ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Supported formats: PDF, TXT, DOCX, PPTX\nMax size: 20MB',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 14),
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: _pickFile,
+                    icon: const Icon(Icons.folder_open),
+                    label: const Text('Browse Files'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF6C63FF),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ] else ...[
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        backgroundColor: _getFileTypeColor(_selectedFile!.extension ?? ''),
+                        child: Text(
+                          _selectedFile!.extension?.toUpperCase() ?? 'DOC',
+                          style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _selectedFile!.name,
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${(_selectedFile!.size / 1024 / 1024).toStringAsFixed(2)} MB',
+                              style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white),
+                        onPressed: _removeFile,
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Question Count Card
+          _buildGlassCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    CircleAvatar(
-                      backgroundColor: _getFileTypeColor(_selectedFile!.extension ?? ''),
+                    const Text(
+                      'Number of Questions (1-50)',
+                      style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF6C63FF).withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                       child: Text(
-                        _selectedFile!.extension?.toUpperCase() ?? 'DOC',
-                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                        '${_questionCount.toInt()}',
+                        style: const TextStyle(color: Color(0xFF6C63FF), fontWeight: FontWeight.bold),
                       ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _selectedFile!.name,
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '${(_selectedFile!.size / 1024 / 1024).toStringAsFixed(2)} MB',
-                            style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: _removeFile,
                     ),
                   ],
                 ),
+                const SizedBox(height: 16),
+                SliderTheme(
+                  data: SliderThemeData(
+                    activeTrackColor: const Color(0xFF6C63FF),
+                    inactiveTrackColor: Colors.white.withValues(alpha: 0.2),
+                    thumbColor: Colors.white,
+                    overlayColor: const Color(0xFF6C63FF).withValues(alpha: 0.2),
+                  ),
+                  child: Slider(
+                    value: _questionCount,
+                    min: 5,
+                    max: 50,
+                    divisions: 45,
+                    onChanged: (val) {
+                      setState(() => _questionCount = val);
+                    },
+                  ),
+                ),
               ],
-            ],
+            ),
           ),
-        ),
-        const SizedBox(height: 24),
-        _buildGlassCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Number of Questions',
-                    style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+          const SizedBox(height: 16),
+          // Difficulty Level Card
+          _buildGlassCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Difficulty Level',
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: ['Easy', 'Medium', 'High', 'Extreme'].map((level) {
+                      final isSelected = _difficulty == level;
+                      Color chipColor;
+                      switch (level) {
+                        case 'Easy': chipColor = Colors.green; break;
+                        case 'Medium': chipColor = Colors.blue; break;
+                        case 'High': chipColor = Colors.orange; break;
+                        case 'Extreme': chipColor = Colors.red; break;
+                        default: chipColor = const Color(0xFF6C63FF);
+                      }
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8.0),
+                        child: ChoiceChip(
+                          label: Text(level),
+                          selected: isSelected,
+                          selectedColor: chipColor,
+                          backgroundColor: Colors.white.withValues(alpha: 0.1),
+                          labelStyle: TextStyle(
+                            color: isSelected ? Colors.white : Colors.white70,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          onSelected: (selected) {
+                            if (selected) {
+                              setState(() => _difficulty = level);
+                            }
+                          },
+                        ),
+                      );
+                    }).toList(),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF6C63FF).withOpacity(0.2),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Chatbox / AI Instructions Card
+          _buildGlassCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.chat_bubble_outline, color: Colors.white70, size: 20),
+                    SizedBox(width: 8),
+                    Text(
+                      'AI Instructions / Chatbox (Optional)',
+                      style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _instructionController,
+                  maxLines: 3,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: 'e.g., Focus on Chapter 2, include dates, prioritize definitions...',
+                    hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
+                    fillColor: Colors.white.withValues(alpha: 0.05),
+                    filled: true,
+                    border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
                     ),
-                    child: Text(
-                      '${_questionCount.toInt()}',
-                      style: const TextStyle(color: const Color(0xFF6C63FF), fontWeight: FontWeight.bold),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF6C63FF), width: 2),
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              SliderTheme(
-                data: SliderThemeData(
-                  activeTrackColor: const Color(0xFF6C63FF),
-                  inactiveTrackColor: Colors.white.withOpacity(0.2),
-                  thumbColor: Colors.white,
-                  overlayColor: const Color(0xFF6C63FF).withOpacity(0.2),
                 ),
-                child: Slider(
-                  value: _questionCount,
-                  min: 5,
-                  max: 20,
-                  divisions: 15,
-                  onChanged: (val) {
-                    setState(() => _questionCount = val);
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-        const Spacer(),
-        SizedBox(
-          height: 56,
-          child: ElevatedButton(
-            onPressed: _selectedFile == null ? null : _generateQuiz,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF6C63FF),
-              disabledBackgroundColor: Colors.white.withOpacity(0.1),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              elevation: 0,
-            ),
-            child: const Text(
-              'Generate Quiz',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ],
             ),
           ),
+          const SizedBox(height: 16),
+          // Question Types Card
+          _buildGlassCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Question Types to Include',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Select at least one type',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.5),
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _buildTypeChip('mcq', 'Multiple Choice', Icons.list_alt_rounded, Colors.blue),
+                    _buildTypeChip('flashcard', 'Flashcard', Icons.flip_rounded, Colors.orange),
+                    _buildTypeChip('identification', 'Identification', Icons.edit_note_rounded, Colors.teal),
+                    _buildTypeChip('enumeration', 'Enumeration', Icons.format_list_numbered_rounded, Colors.purple),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            height: 56,
+            child: ElevatedButton(
+              onPressed: (_selectedFile == null || _selectedTypes.isEmpty) ? null : _generateQuiz,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6C63FF),
+                disabledBackgroundColor: Colors.white.withValues(alpha: 0.1),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                elevation: 0,
+              ),
+              child: const Text(
+                'Generate Quiz',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+          const SizedBox(height: 32),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTypeChip(String type, String label, IconData icon, Color color) {
+    final isSelected = _selectedTypes.contains(type);
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          if (isSelected) {
+            // Don't allow deselecting if it's the last one
+            if (_selectedTypes.length > 1) {
+              _selectedTypes.remove(type);
+            }
+          } else {
+            _selectedTypes.add(type);
+          }
+        });
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? color.withValues(alpha: 0.25)
+              : Colors.white.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? color : Colors.white.withValues(alpha: 0.15),
+            width: 1.5,
+          ),
         ),
-        const SizedBox(height: 32),
-      ],
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isSelected ? Icons.check_box_rounded : icon,
+              color: isSelected ? color : Colors.white54,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? Colors.white : Colors.white54,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -351,7 +548,7 @@ class _AiQuizGeneratorScreenState extends ConsumerState<AiQuizGeneratorScreen> w
             Text(
               'This might take a minute depending on the document size.',
               style: TextStyle(
-                color: Colors.white.withOpacity(0.6),
+                color: Colors.white.withValues(alpha: 0.6),
                 fontSize: 14,
               ),
               textAlign: TextAlign.center,
@@ -382,7 +579,7 @@ class _AiQuizGeneratorScreenState extends ConsumerState<AiQuizGeneratorScreen> w
             const SizedBox(height: 12),
             Text(
               _errorMessage,
-              style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14),
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 14),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 32),
@@ -395,7 +592,7 @@ class _AiQuizGeneratorScreenState extends ConsumerState<AiQuizGeneratorScreen> w
                 icon: const Icon(Icons.refresh),
                 label: const Text('Try Again'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white.withOpacity(0.1),
+                  backgroundColor: Colors.white.withValues(alpha: 0.1),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -421,7 +618,7 @@ class _AiQuizGeneratorScreenState extends ConsumerState<AiQuizGeneratorScreen> w
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.greenAccent.withOpacity(0.2),
+                color: Colors.greenAccent.withValues(alpha: 0.2),
                 shape: BoxShape.circle,
               ),
               child: const Icon(Icons.check, size: 48, color: Colors.greenAccent),
@@ -439,7 +636,7 @@ class _AiQuizGeneratorScreenState extends ConsumerState<AiQuizGeneratorScreen> w
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.05),
+                color: Colors.white.withValues(alpha: 0.05),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Column(
@@ -457,7 +654,7 @@ class _AiQuizGeneratorScreenState extends ConsumerState<AiQuizGeneratorScreen> w
                   Text(
                     '$qCount Questions Generated',
                     style: const TextStyle(
-                      color: const Color(0xFF6C63FF),
+                      color: Color(0xFF6C63FF),
                       fontWeight: FontWeight.w500,
                     ),
                   ),

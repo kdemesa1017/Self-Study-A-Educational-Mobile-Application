@@ -88,7 +88,7 @@ class StudyModeScreen extends ConsumerWidget {
                 Text(
                   'Choose a quiz to start studying',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.white.withOpacity(0.9),
+                    color: Colors.white.withValues(alpha: 0.9),
                   ),
                 ),
               ],
@@ -170,7 +170,7 @@ class StudyModeScreen extends ConsumerWidget {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: quizzesWithQuestions.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
               itemBuilder: (context, index) {
                 final quiz = quizzesWithQuestions[index];
                 return _buildQuizCard(context, quiz);
@@ -190,7 +190,7 @@ class StudyModeScreen extends ConsumerWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+        color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
@@ -219,9 +219,9 @@ class StudyModeScreen extends ConsumerWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withOpacity(0.3)),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -249,60 +249,93 @@ class StudyModeScreen extends ConsumerWidget {
 
   Widget _buildQuizCard(BuildContext context, QuizModel quiz) {
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Theme.of(context).colorScheme.primary,
-                    Theme.of(context).colorScheme.secondary,
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(Icons.quiz, color: Colors.white),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        // Tapping the card body prioritizes Flashcard mode.
+        onTap: () => context.push('/study/flashcard/${quiz.id}'),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  Text(
-                    quiz.title,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
+                  Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Theme.of(context).colorScheme.primary,
+                          Theme.of(context).colorScheme.secondary,
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
                     ),
+                    child: const Icon(Icons.quiz, color: Colors.white),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${quiz.questionIds.length} questions',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.grey.shade600,
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          quiz.title,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${quiz.questionIds.length} questions',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: Colors.grey.shade600),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
-            ),
-            Column(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.flip, color: Colors.orange),
-                  tooltip: 'Flashcards',
-                  onPressed: () => context.push('/study/flashcard/${quiz.id}'),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.quiz, color: Colors.green),
-                  tooltip: 'Quiz Mode',
-                  onPressed: () => context.push('/study/quiz/${quiz.id}'),
-                ),
-              ],
-            ),
-          ],
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  // Primary action — Flashcards (prioritized)
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed:
+                          () => context.push('/study/flashcard/${quiz.id}'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      icon: const Icon(Icons.flip, size: 18),
+                      label: const Text('Flashcards'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Secondary action — Quiz Mode
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => context.push('/study/quiz/${quiz.id}'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.green,
+                        side: BorderSide(color: Colors.green.shade300),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      icon: const Icon(Icons.quiz, size: 18),
+                      label: const Text('Quiz Mode'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
